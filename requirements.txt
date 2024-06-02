@@ -1,0 +1,10 @@
+SQLAlchemy
+Flask
+requests
+pydantic
+waitress
+loguru
+python-dotenv
+psycopg2
+asyncpg
+httpx
