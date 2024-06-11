@@ -45,7 +45,7 @@ class ProductSupplier(ProductBuyer):
 
 
 class Buyer(BaseModel):
-    full_name: Optional[str]
+    full_name: str
     phone: Optional[str]
     email: Optional[str]
     has_duplicates: bool = Field(exclude=True, default=False)
@@ -69,7 +69,7 @@ class Order1CBuyer(BaseModel):
     manager_comment: Optional[str]
     products: list[ProductBuyer]
 
-    buyer: Buyer
+    buyer: Optional[Buyer]
     supplier: Optional[str] = Field(exclude=True)
     shipping: Shipping
     payment: Optional[str]
@@ -78,19 +78,23 @@ class Order1CBuyer(BaseModel):
     shop_sql_id: Optional[int] = Field(exclude=True)  # shop id at SQL DB
     push_to_1C: bool = Field(default=False, exclude=True)
 
+    class Config:
+        debug = True
+        error_message_template = "Field '{field}' {msg}"
+
     @root_validator(pre=True)
     def get_nested(cls, model):
         model['shop'] = shop_key_to_1c.get(model['source_id'])
 
         model['shop_sql_id'] = shop_crm_id_to_sql_shop_id.get(model['source_id'], 1)
 
-        model['buyer']['phone'] = international_phone(model['buyer']['phone'])
-        model['shipping']['recipient_phone'] = international_phone(model['shipping']['recipient_phone'])
-        if model['shipping']['recipient_phone'] == model['buyer']['phone']:
-            model['shipping']['recipient_full_name'] = None
-            model['shipping']['recipient_phone'] = None
-
-        model['buyer']['has_duplicates'] = model['buyer']['has_duplicates'] > 0
+        if model['buyer']:
+            model['buyer']['phone'] = international_phone(model['buyer']['phone'])
+            model['shipping']['recipient_phone'] = international_phone(model['shipping']['recipient_phone'])
+            if model['shipping']['recipient_phone'] == model['buyer']['phone']:
+                model['shipping']['recipient_full_name'] = None
+                model['shipping']['recipient_phone'] = None
+            model['buyer']['has_duplicates'] = model['buyer']['has_duplicates'] > 0
 
         model['manager'] = model['manager'] and manager_key_to_1c.get(model['manager']['id'])
 

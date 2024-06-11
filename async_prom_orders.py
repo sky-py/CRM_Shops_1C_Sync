@@ -25,6 +25,12 @@ logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-
            level='ERROR')
 
 
+def send_message(order):
+    message_text = generate_message_text(order)
+    send_tg_message(message_text, *constants.managers_plus)
+    logger.info(message_text.replace('\n', ' '))
+
+
 def generate_message_text(order: OrderProm):
     match order.status:
         case PromStatus.NEW:
@@ -118,8 +124,7 @@ async def process_one_order(order: OrderProm, session: Session_async, color: str
     else:
         if not order_db.is_accepted and order.status not in [PromStatus.NEW, PromStatus.PAID]:
             order_db.is_accepted = True
-            send_tg_message(generate_message_text(order), *constants.managers_plus)
-            logger.info(color + f"{order.shop} - принят заказ {order.order_id}")
+            send_message(order)
 
         if order.status != order_db.status:
             order_db.status = order.status
@@ -133,8 +138,7 @@ async def process_new_order(order: OrderProm, session: Session_async):
     await add_order_to_db(order, session)
     if order.cpa_is_refunded:
         await add_order_to_cpa_queue(order, session)
-    send_tg_message(generate_message_text(order), *constants.managers_plus)
-    logger.info(f"{order.shop} - НОВЫЙ заказ {order.order_id}")
+    send_message(order)
 
 
 async def main():

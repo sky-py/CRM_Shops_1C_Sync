@@ -50,12 +50,12 @@ status_prom_to_db = {
 }
 
 manager_insales_to_db = {   # TODO 1
-    798545: 7,   # Lilia
+    798545: 9,   # Ilona
     192279: 2,   # Vika
     1245660: 3,  # Natasha
     1252475: 4,  # Lida
     156590: 6,  # Olena
-    4760402: 8,  # Galina
+    # 4760402: 9,  # Lilya Tovaroved
 }
 
 manager_key_to_db = {    # TODO 2

@@ -53,6 +53,7 @@ class Order(BaseModel):
     is_paid: bool = Field(alias='financial_status', exclude=True)
     source_id: Optional[int] = Field(default=None)
     source_uuid: str = Field(alias='number')
+    manager_DB: Optional[int] = Field(default=None, exclude=True)
     manager_id: Optional[int] = Field(default=None)
     ordered_at: str = Field(alias='created_at')
     products: list[Product] = Field(alias='order_lines')
@@ -66,7 +67,6 @@ class Order(BaseModel):
     total_price: float = Field(default=0, exclude=True)
     # status_id: int = Field(alias='custom_status', exclude=True)
     status_id: int = Field(alias='fulfillment_status', exclude=True)
-    manager_DB: Optional[int] = Field(default=None, exclude=True)
 
     @root_validator(pre=True)
     def get_nested(cls, model):

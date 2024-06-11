@@ -100,7 +100,7 @@ def get_last_modified_orders(minutes: int) -> list:
 
 def is_order_valid(order: Order1CBuyer) -> bool:
     """Checks if a client order is valid for processing."""
-    return order.push_to_1C and order.manager and order.buyer.phone and not order.buyer.has_duplicates
+    return order.push_to_1C and order.manager and order.buyer and order.buyer.phone and not order.buyer.has_duplicates
 
 
 def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder):
@@ -189,7 +189,12 @@ def main():
 def process_orders(crm_orders: list):
     with Session.begin() as session:
         for order_dict in crm_orders:
-            order = Order1CBuyer(**order_dict)
+            try:
+                order = Order1CBuyer(**order_dict)
+            except Exception as e:
+                logger.error(f'Error {e} parsing order: {order_dict["id"]}')
+                continue
+
             if not is_order_valid(order):
                 continue  # skip some not properly filled orders
 
@@ -213,6 +218,7 @@ def process_orders(crm_orders: list):
 
 
 def process_cpa_refunds():
+
     with Session.begin() as session:
         all_cpa_refunds = session.query(PromCPARefundQueueDB).all()
         for cpa_refund in all_cpa_refunds:
