@@ -16,6 +16,7 @@ from retry import retry
 
 
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
+bad_orders = []
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_path).mkdir(parents=True, exist_ok=True)
 
@@ -192,7 +193,9 @@ def process_orders(crm_orders: list):
             try:
                 order = Order1CBuyer(**order_dict)
             except Exception as e:
-                logger.error(f'Error {e} parsing order: {order_dict["id"]}')
+                if order_dict['id'] not in bad_orders:
+                    logger.error(f'Error {e} parsing order: {order_dict['id']}')
+                    bad_orders.append(order_dict['id'])
                 continue
 
             if not is_order_valid(order):
