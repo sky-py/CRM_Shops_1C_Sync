@@ -1,6 +1,6 @@
 import re
 from typing import Optional
-from pydantic.v1 import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, model_validator
 from parse.parse_constants import *
 from common_funcs import international_phone
 from datetime import datetime
@@ -17,7 +17,7 @@ class Product(BaseModel):
     quantity: int
     cpa_commission: float = Field(default=0)
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def process_model(cls, model):
         model['price'] = get_price(model['price']) if model.get('price') else 0
         model['cpa_commission'] = float(model['cpa_commission']['amount']) if model.get('cpa_commission') else 0
@@ -29,16 +29,17 @@ class Buyer(BaseModel):
     middlename: str = Field(exclude=True)
     surname: str = Field(exclude=True)
     full_name: str
-    phone: Optional[str] = Field(default=None)
-    email: Optional[str] = Field(default=None)
+    phone: Optional[str] = None
+    email: Optional[str] = None
     buyer_comment: Optional[str] = Field(exclude=True)
 
-    class Config:
-        anystr_strip_whitespace = True
+    model_config = {
+        'str_strip_whitespace': True
+    }
 
 
 class Shipping(BaseModel):
-    full_address: Optional[str] = Field(default=None)
+    full_address: Optional[str] = None
 
 
 class OrderProm(BaseModel):
@@ -52,10 +53,10 @@ class OrderProm(BaseModel):
     products: list[Product]
     shipping: Shipping
 
-    shop: Optional[str]    # shop name by 1C
-    manager: Optional[str]
+    shop: Optional[str] = None    # shop name by 1C
+    manager: Optional[str] = None
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def get_nested(cls, model):
         def process_names(name: str) -> str:
             return name.strip().capitalize() if name else ''

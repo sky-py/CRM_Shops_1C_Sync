@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic.v1 import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 from parse.parse_constants import *
 from parse.process_xml import get_name_by_sku
 from common_funcs import international_phone
@@ -8,11 +8,11 @@ from common_funcs import international_phone
 class OrderKeyCrmShort(BaseModel):
     source_id: int
     key_crm_id: int = Field(alias='id')
-    source_uuid: Optional[int]
-    manager_id: Optional[int]
+    source_uuid: Optional[int] = None
+    manager_id: Optional[int] = None
     status: Status = Field(alias='status_group_id')
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def get_nested(cls, model):
         model = {k: v for k, v in model['context'].items()}
         model['status_group_id'] = status_key_group_to_db.get(model['status_group_id'])
@@ -27,11 +27,11 @@ class ProductBuyer(BaseModel):
     # purchased_price: float = Field(default=0, exclude=True)
     quantity: float
 
-    @validator('quantity')
+    @field_validator('quantity')
     def convert(cls, value: str):
         return int(value)
 
-    @validator('price')
+    @field_validator('price')
     def round_low(cls, value):
         return value // 1
 
@@ -39,22 +39,22 @@ class ProductBuyer(BaseModel):
 class ProductSupplier(ProductBuyer):
     price: float = Field(default=0, alias='purchased_price')
 
-    @validator('price')
+    @field_validator('price')
     def round_low(cls, value):
         return value
 
 
 class Buyer(BaseModel):
     full_name: str
-    phone: Optional[str]
-    email: Optional[str]
+    phone: Optional[str] = None
+    email: Optional[str] = None
     has_duplicates: bool = Field(exclude=True, default=False)
 
 
 class Shipping(BaseModel):
-    full_address: Optional[str]
-    recipient_full_name: Optional[str]
-    recipient_phone: Optional[str]
+    full_address: Optional[str] = None
+    recipient_full_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
 
 
 class Order1CBuyer(BaseModel):
@@ -62,27 +62,27 @@ class Order1CBuyer(BaseModel):
     document_type: Document1C = Field(default=Document1C.CLIENT_ORDER, exclude=True)
     proveden: bool = Field(default=False)
     key_crm_id: int = Field(alias='id')
-    parent_id: Optional[int]
-    shop: Optional[str]  # shop name by 1C
-    source_uuid: Optional[int] = Field(exclude=True)  # order id by back office
-    manager: Optional[str]
-    manager_comment: Optional[str]
+    parent_id: Optional[int] = None
+    shop: Optional[str] = None  # shop name by 1C
+    source_uuid: Optional[int] = Field(default=None, exclude=True)  # order id by back office
+    manager: Optional[str] = None
+    manager_comment: Optional[str] = None
     products: list[ProductBuyer]
 
-    buyer: Optional[Buyer]
-    supplier: Optional[str] = Field(exclude=True)
+    buyer: Optional[Buyer] = None
+    supplier: Optional[str] = Field(default=None, exclude=True)
     shipping: Shipping
-    payment: Optional[str]
+    payment: Optional[str] = None
 
-    shop_id: Optional[int] = Field(alias='source_id', exclude=True)  # shop id at CRM
-    shop_sql_id: Optional[int] = Field(exclude=True)  # shop id at SQL DB
+    shop_id: Optional[int] = Field(default=None, alias='source_id', exclude=True)  # shop id at CRM
+    shop_sql_id: Optional[int] = Field(default=None, exclude=True)  # shop id at SQL DB
     push_to_1C: bool = Field(default=False, exclude=True)
 
-    class Config:
-        debug = True
-        error_message_template = "Field '{field}' {msg}"
+    model_config = {
+        'debug': True,
+    }
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def get_nested(cls, model):
         model['shop'] = shop_key_to_1c.get(model['source_id'])
 
@@ -129,16 +129,16 @@ class Order1CSupplier(Order1CBuyer):
     action: str = Field(default='create_supplier_order')
     document_type: Document1C = Field(default=Document1C.SUPPLIER_ORDER, exclude=True)
     supplier: str
-    tracking_code: Optional[str]
-    supplier_id: Optional[str]
-    products: list[ProductSupplier]
+    tracking_code: Optional[str] = None
+    supplier_id: Optional[str] = None
+    products: list[ProductSupplier] = None
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def get_nested_2(cls, model):
         model['tracking_code'] = model['shipping']['tracking_code']
         return model
 
-    @validator('tracking_code')
+    @field_validator('tracking_code')
     def check_tracking_code(cls, value):
         if value is not None and len(value) < 5:
             return None
@@ -156,15 +156,14 @@ class Order1CSupplierPromCommissionOrder(BaseModel):
     proveden: bool = Field(default=True)
     key_crm_id: int
     parent_id: int
-    shop: Optional[str]
-    products: list[ProductSupplier] = Field(default=[ProductSupplier(sku='Commission_Prosale',
+    shop: Optional[str] = None
+    products: list[ProductSupplier] = Field(default_factory=lambda: [ProductSupplier(sku='Commission_Prosale',
                                                                      name='Комиссия просейл',
-                                                                     price=0,
                                                                      quantity=1.0)])
     manager: str = Field(default='Финансист')
-    manager_comment: Optional[str]
-    tracking_code: Optional[str]
-    supplier_id: Optional[str]
+    manager_comment: Optional[str] = None
+    tracking_code: Optional[str] = None
+    supplier_id: Optional[str] = None
     supplier: str
 
 
@@ -176,3 +175,4 @@ class Order1CPostupleniye(Order1CSupplierPromCommissionOrder):
 class Order1CReturnTovarov(Order1CSupplierPromCommissionOrder):
     action: str = Field(default='create_return_tovarov')
     document_type: Document1C = Field(default=Document1C.RETURN_TOVAROV, exclude=True)
+

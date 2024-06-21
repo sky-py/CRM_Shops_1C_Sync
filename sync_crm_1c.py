@@ -1,4 +1,5 @@
 import time
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import constants
@@ -40,7 +41,8 @@ def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[Produc
 
 def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye,
                      include_keys=None, exclude_keys=None):
-    text = order.json(include=include_keys, exclude=exclude_keys, ensure_ascii=False, indent=4)
+    text = json.dumps(order.model_dump(mode='json', include=include_keys, exclude=exclude_keys),
+                      ensure_ascii=False, indent=4)
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
     (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
     (Path(constants.json_archive_path) / json_file).write_text(data=text, encoding='utf-8')

@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic.v1 import BaseModel, Field, root_validator, validator    # PositiveInt
+from pydantic import BaseModel, Field, model_validator, field_validator
 from parse.parse_constants import *
 from common_funcs import international_phone
 
@@ -14,16 +14,17 @@ class Client(BaseModel):
     phone: Optional[str] = Field(default=None)
     bonus_points: int = Field(default=0, exclude=True)
 
-    class Config:
-        anystr_strip_whitespace = True
+    model_config = {
+        'str_strip_whitespace': True
+    }
 
-    # @root_validator(pre=True)
+    # @model_validator(mode='before')
     # def concatanate(cls, model):
     #     if model['surname']:
     #         model['name'] = model['surname'] + ' ' + model['name']
     #     return model
 
-    @validator('phone')
+    @field_validator('phone')
     def normalize_phone(cls, value):
         return international_phone(value)
 
@@ -52,7 +53,7 @@ class Utm(BaseModel):
 class Order(BaseModel):
     is_paid: bool = Field(alias='financial_status', exclude=True)
     source_id: Optional[int] = Field(default=None)
-    source_uuid: str = Field(alias='number')
+    source_uuid: int = Field(alias='number')
     manager_DB: Optional[int] = Field(default=None, exclude=True)
     manager_id: Optional[int] = Field(default=None)
     ordered_at: str = Field(alias='created_at')
@@ -68,7 +69,7 @@ class Order(BaseModel):
     # status_id: int = Field(alias='custom_status', exclude=True)
     status_id: int = Field(alias='fulfillment_status', exclude=True)
 
-    @root_validator(pre=True)
+    @model_validator(mode='before')
     def get_nested(cls, model):
         def process_names(name: str) -> str:
             return name.strip().capitalize() if name else ''
@@ -103,7 +104,7 @@ class Order(BaseModel):
 
         return model
 
-    @validator('ordered_at')
+    @field_validator('ordered_at')
     def format_date(cls, value):
         return value.split('.')[0].replace('T', ' ')
 
