@@ -3,15 +3,13 @@ import json
 
 REQUEST_TIMEOUT = 20
 results_per_page = 50
-tries_per_request = 20
-pause_between_tries = 20
 main_url = 'https://my.prom.ua/api/v1'
 
 
 class PromClient:
-    def __init__(self, token, client: httpx.AsyncClient):
+    def __init__(self, token):
         self.token = token
-        self.client = client
+        self.client = httpx.AsyncClient()
         self.headers = {
             'Authorization': f'Bearer {self.token}',
             'Content-type': 'application/json'

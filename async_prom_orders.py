@@ -1,5 +1,4 @@
 import asyncio
-import httpx
 import random
 import platform
 import colorama
@@ -87,8 +86,8 @@ async def get_orders(shop_client: PromClient) -> list | None:
 
 
 @logger.catch
-async def worker(shop: dict, client: httpx.AsyncClient):
-    shop_client = PromClient(shop['token'], client)
+async def worker(shop: dict):
+    shop_client = PromClient(shop['token'])
     color = get_color(shop)
     shop_name = shop['name']
     print(color + f"START PROM {shop_name} ")
@@ -143,8 +142,7 @@ async def process_new_order(order: OrderProm, session: Session_async):
 
 async def main():
     await create_tables()
-    async with httpx.AsyncClient() as client:
-        await asyncio.gather(*[worker(shop, client) for shop in constants.prom_shops])
+    await asyncio.gather(*[worker(shop) for shop in constants.prom_shops])
 
 
 if __name__ == '__main__':
