@@ -19,6 +19,7 @@ order_completed_stage_id = 12
 
 UKRSALON_URL = os.getenv('UKRSALON_URL')
 
+# ================================================= TELEGRAM =============================================
 tg_token = os.getenv('tg_token_salon')
 tg_token_tools = os.getenv('tg_token_tools')
 admin_tg = os.getenv('admin_tg')
@@ -53,4 +54,14 @@ prom_shops = [
 prom_sleep_time = 5  # sec
 prom_stop_tries_after_delay = 200  # sec
 PROM_TIME_INTERVAL_TO_CHECK = 1320  # minutes (twenty-four hours)
+
+
+# ================================================= HOROSHOP =============================================
+horoshop_shops = [
+    {'name': Shops.KLIMAZON.value, 'login': os.getenv('HOROSHOP_LOGIN'), 'password': os.getenv('HOROSHOP_PASSWORD'), 'managers': managers_plus},
+]
+
+HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1320  # minutes (twenty-four hours)
+horoshop_sleep_time = 5  # sec
+horoshop_stop_tries_after_delay = 200  # sec
 

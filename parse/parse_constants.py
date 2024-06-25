@@ -23,6 +23,7 @@ class PromStatus(Enum):
     PAID = 'Paid'
     DRAFT = 'Draft'
     OTHER = 'Other'
+    DISPATCHED = 'Dispatched'
 
 
 class Shops(Enum):
@@ -47,6 +48,14 @@ status_prom_to_db = {
     'canceled': PromStatus.CANCELLED,
     'paid': PromStatus.PAID,
     'draft': PromStatus.DRAFT,
+}
+
+status_horoshop_to_db = {
+    1: PromStatus.NEW,
+    2: PromStatus.ACCEPTED,
+    3: PromStatus.SUCCESS,
+    4: PromStatus.CANCELLED,
+    6: PromStatus.DISPATCHED,
 }
 
 manager_insales_to_db = {   # TODO 1
@@ -118,6 +127,7 @@ shop_key_to_1c = {
     8: 'Insta ' + Shops.KLIMAZON.value,
     9: 'Insta ' + Shops.KRASUNIA.value,
     10: Shops.UKRSALON.value,
+    11: Shops.KLIMAZON.value,
 }
 
 shop_crm_id_to_sql_shop_id = {
