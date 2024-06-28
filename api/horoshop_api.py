@@ -6,6 +6,7 @@ from typing import Optional
 class Route(Enum):
     AUTH = 'auth'
     ORDERS = 'orders/get/'
+    PRODUCTS = 'catalog/import/'
 
 
 class HoroshopClient:
@@ -24,11 +25,12 @@ class HoroshopClient:
         return parsed_data['response']['token']
 
     def parce_validate_response(self, r: httpx.Response) -> dict:
-        # print('status_code=', r.status_code)
-        # print(r.text)
+        print('status_code=', r.status_code)
+        print(r.text)
         r.raise_for_status()
         parsed_data = r.json()
-        if parsed_data['status'] != 'OK':
+        if parsed_data['status'] in ['UNAUTHORIZED', 'AUTHORIZATION_ERROR', 'EXCEPTION',
+                                     'ERROR', 'UNDEFINED_FUNCTION', 'HTTP_ERROR']:
             raise Exception(f'{parsed_data["status"]} '
                             f'{parsed_data.get('response', '') and parsed_data.get('response').get('message', '')} '
                             f'{parsed_data.get('response', '') and parsed_data.get('response').get('code', '')}'
@@ -43,7 +45,7 @@ class HoroshopClient:
                              json=data,
                              headers=self.headers, timeout=self.REQUEST_TIMEOUT)
         parsed_data = self.parce_validate_response(r)
-        return parsed_data['response']
+        return parsed_data
 
     def get_orders(self, limit: int = None, date_from: str = None, date_to: str = None) -> list:
         data = dict()
@@ -53,8 +55,11 @@ class HoroshopClient:
             data['from'] = date_from
         if date_to:
             data['to'] = date_to
-        response = self.make_request(route=Route.ORDERS, data=data)
-        return response['orders'] if response.get('orders') else []
+        parced_data = self.make_request(route=Route.ORDERS, data=data)
+        return parced_data['response']['orders'] if parced_data['response'].get('orders') else []
+
+    def import_products(self, products: list) -> dict:
+        return self.make_request(route=Route.PRODUCTS, data={'products': products})
 
     def close(self):
         self.client.close()  # Закрытие клиента

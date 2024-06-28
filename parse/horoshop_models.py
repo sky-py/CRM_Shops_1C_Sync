@@ -1,8 +1,22 @@
 from typing import Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from parse.parse_constants import *
 from common_funcs import international_phone
 from datetime import datetime
+from enum import Enum
+
+
+class Availability(Enum):
+    AVAILABLE = 'В наличии'
+    NOT_AVAILABLE = 'Нет в наличии'
+    TO_ORDER = 'Под заказ'
+
+
+class Currency(Enum):
+    UAH = 'UAH'
+    USD = 'USD'
+    EUR = 'EUR'
+    GBP = 'GBP'
 
 
 class Product(BaseModel):
@@ -52,3 +66,24 @@ class OrderHoroshop(BaseModel):
         model['shipping']['full_address'] = model.get('delivery_address', '')
 
         return model
+
+
+class ProductHoroshop(BaseModel):
+    sku: str = Field(alias='article')
+    price: Optional[float] = None
+    price_old: float = Field(default=0)
+    discount: float = Field(default=0)
+    currency: Optional[Currency] = None
+    available: Optional[Availability] = Field(default=None, alias='presence')
+
+    model_config = ConfigDict(
+        use_enum_values=True,
+        populate_by_name=True
+    )
+
+    def model_dump(self, **kwargs) -> dict:
+        data = super().model_dump(**kwargs)
+        for key, value in data.items():
+            if isinstance(value, Enum):
+                data[key] = value.value
+        return data

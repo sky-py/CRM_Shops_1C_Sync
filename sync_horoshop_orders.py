@@ -15,7 +15,7 @@ from db.db_init_async import Session_async, create_tables
 from db.models import PromOrderDB
 from messengers import send_service_tg_message, send_tg_message
 from parse.parse_constants import PromStatus
-from parse.parse_horoshop_order import OrderHoroshop
+from parse.horoshop_models import OrderHoroshop
 
 
 colorama.init()
