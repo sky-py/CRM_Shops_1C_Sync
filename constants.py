@@ -2,9 +2,10 @@ import os
 from dotenv import load_dotenv
 from parse.parse_constants import Shops
 
-load_dotenv('c:/Scripts/env/tg.env')
-load_dotenv('c:/Scripts/env/crm.env')
-load_dotenv('c:/Scripts/env/dev.env')
+
+load_dotenv('/etc/env/tg.env')
+load_dotenv('/etc/env/crm.env')
+load_dotenv('/etc/env/dev.env')
 
 IS_PRODUCTION_SERVER = True if os.getenv('IS_PRODUCTION_SERVER') == 'True' else False
 

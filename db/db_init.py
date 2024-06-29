@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from db.models import Base
 # from sqlalchemy.orm import Session as Session_Simple
 
-load_dotenv('c:/Scripts/env/db.env')
+load_dotenv('/etc/env/db.env')
 
 user = os.getenv('POSTGRES_user')
 password = os.getenv('POSTGRES_password')

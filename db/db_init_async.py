@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from db.models import Base
 
-load_dotenv('c:/Scripts/env/db.env')
+load_dotenv('/etc/env/db.env')
 
 user = os.getenv('POSTGRES_user')
 password = os.getenv('POSTGRES_password')

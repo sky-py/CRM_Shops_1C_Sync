@@ -6,7 +6,7 @@ from common_funcs import international_phone
 import os
 from dotenv import load_dotenv
 
-load_dotenv('c:/Scripts/env/db.env')
+load_dotenv('/etc/env/db.env')
 
 user = os.getenv('SQL_user')
 password = os.getenv('SQL_password')
