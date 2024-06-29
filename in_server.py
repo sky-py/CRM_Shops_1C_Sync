@@ -84,7 +84,7 @@ def process_request():
 
 if __name__ == '__main__':
     print('Starting in_server for RECEIVING CRM Webhooks')
-    if constants.IS_PRODUCTION:
+    if constants.IS_PRODUCTION_SERVER:
         serve(app, host='0.0.0.0', port=55055, threads=4)
     else:
         app.run(host='0.0.0.0', port=55055, debug=True)

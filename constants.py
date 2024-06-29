@@ -1,12 +1,12 @@
-import constants_dev
 import os
 from dotenv import load_dotenv
 from parse.parse_constants import Shops
 
 load_dotenv('c:/Scripts/env/tg.env')
 load_dotenv('c:/Scripts/env/crm.env')
+load_dotenv('c:/Scripts/env/dev.env')
 
-IS_PRODUCTION = constants_dev.IS_PRODUCTION  # type of web server used
+IS_PRODUCTION_SERVER = True if os.getenv('IS_PRODUCTION_SERVER') == 'True' else False
 
 KEY_CRM_API_KEY = os.getenv('KEY_CRM_API_KEY')
 KEY_GET_LAST_ACTIVE_ORDERS = 200
@@ -22,6 +22,7 @@ UKRSALON_URL = os.getenv('UKRSALON_URL')
 # ================================================= TELEGRAM =============================================
 tg_token = os.getenv('tg_token_salon')
 tg_token_tools = os.getenv('tg_token_tools')
+
 admin_tg = os.getenv('admin_tg')
 director_tg = os.getenv('director_tg')
 ukrsalon_tg = os.getenv('ukrsalon_tg')
@@ -40,7 +41,7 @@ time_to_sleep_insales_crm = 5   # sec
 time_to_sleep_crm_1c = 40   # sec
 
 json_orders_for_1c_path = 'C:/Obmen/CRM/IN'
-json_archive_path = constants_dev.json_archive_path
+json_archive_1C_path = os.getenv('json_archive_1C_path')
 
 # ================================================= PROM =============================================
 

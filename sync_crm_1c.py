@@ -19,7 +19,7 @@ from retry import retry
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
 bad_orders = []
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
-Path(constants.json_archive_path).mkdir(parents=True, exist_ok=True)
+Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
 
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
            level='INFO', backtrace=True, diagnose=True)
@@ -45,7 +45,7 @@ def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | 
                       ensure_ascii=False, indent=4)
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
     (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
-    (Path(constants.json_archive_path) / json_file).write_text(data=text, encoding='utf-8')
+    (Path(constants.json_archive_1C_path) / json_file).write_text(data=text, encoding='utf-8')
     if type(order) is not Order1CSupplierUpdate:
         logger.info(f'Created {order.document_type.value}, key_crm_id = {order.key_crm_id}')
     else:
