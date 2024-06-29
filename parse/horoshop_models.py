@@ -77,7 +77,6 @@ class ProductHoroshop(BaseModel):
     available: Optional[Availability] = Field(default=None, alias='presence')
 
     model_config = ConfigDict(
-        use_enum_values=True,
         populate_by_name=True
     )
 

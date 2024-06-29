@@ -7,6 +7,8 @@ class Route(Enum):
     AUTH = 'auth'
     ORDERS = 'orders/get/'
     PRODUCTS = 'catalog/import/'
+    WEBHOOK_SUBSCRIBE = 'hooks/subscribe/'
+    WEBHOOK_UNSUBSCRIBE = 'hooks/unSubscribe/'
 
 
 class HoroshopClient:
@@ -60,6 +62,26 @@ class HoroshopClient:
 
     def import_products(self, products: list) -> dict:
         return self.make_request(route=Route.PRODUCTS, data={'products': products})
+
+    def webhook_subscribe(self, event: str, target_url: str) -> dict:
+        """ Event - название события
+            order_created - событие срабатывающее при оформлении пользователем заказа либо при создании заказа в админ. панели
+            user_signup - событие срабатывающее при регистрации пользователя
+            request_call_me - событие срабатывающее при запросе обратного звонка
+            Ответ:
+            id - идентификатор хука, который необходимо сохранить для отписки от вебхука
+            { "id": 1 }"""
+
+        return self.make_request(route=Route.WEBHOOK_SUBSCRIBE, data={'event': event, 'target_url': target_url})
+
+    def webhook_unsubscribe(self, id: int, target_url: str) -> dict:
+        """ id - идентификатор подписки полученный в функции hooks/subscribe
+            target_url - ссылка на которую отправлялись данные по подписке
+            Ответ:
+            status - Возвращает OK если подписчик на хук был успешно отписан
+            { "status": "OK" }"""
+
+        return self.make_request(route=Route.WEBHOOK_UNSUBSCRIBE, data={'id': id, 'target_url': target_url})
 
     def close(self):
         self.client.close()  # Закрытие клиента
