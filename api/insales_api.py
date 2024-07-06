@@ -62,10 +62,12 @@ class Insales:
             data = {}
         url = self.main_url + route
         match method:
-            case Method.GET: return requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
-            case Method.PUT: return requests.put(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.POST: return requests.post(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.DELETE: return requests.delete(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+            case Method.GET: r = requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
+            case Method.PUT: r = requests.put(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+            case Method.POST: r = requests.post(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+            case Method.DELETE: r = requests.delete(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        return r
 
     def get_orders(self, page=1) -> requests.Response:
         params = {'per_page': orders_per_page, 'page': page}

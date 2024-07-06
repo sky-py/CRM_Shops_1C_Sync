@@ -50,7 +50,7 @@ class Utm(BaseModel):
     utm_source: str = Field(default='')
 
 
-class Order(BaseModel):
+class OrderInsales(BaseModel):
     is_paid: bool = Field(alias='financial_status', exclude=True)
     source_id: Optional[int] = Field(default=None)
     source_uuid: int = Field(alias='number')

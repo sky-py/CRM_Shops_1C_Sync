@@ -10,6 +10,7 @@ from messengers import send_service_tg_message
 from loguru import logger
 from pathlib import Path
 
+from retry import retry
 
 app = Flask(__name__)
 salon = Insales(constants.UKRSALON_URL)
@@ -37,6 +38,16 @@ def make_dict_for_request(key_order: OrderKeyCrmShort) -> dict:
     return order_dict
 
 
+@retry(stop_after_delay=300)
+def send_order_backoffice(order_id: int, data: dict):
+    try:
+        salon.write_order(order_id, data)
+    except Exception as e:
+        logger.error(f'ERROR updating Insales order {order_id} | {str(e)}')
+    else:
+        logger.info(f'SUCCESS updating Insales order {order_id}')
+
+
 @logger.catch
 @app.route('/key_crm', methods=['GET', 'POST'])
 def process_request():
@@ -59,11 +70,7 @@ def process_request():
 
                 order_dict = make_dict_for_request(key_order=key_order)
                 logger.info(f'Updating Insales order {db_order.insales_id} with {order_dict} ...')
-                r = salon.write_order(db_order.insales_id, order_dict)
-                if r:
-                    logger.info(f'SUCCESS updating Insales order {db_order.insales_id}')
-                else:
-                    logger.error(f'ERROR updating Insales order {db_order.insales_id}')
+                send_order_backoffice(db_order.insales_id, order_dict)
 
             else:
                 logger.info(f'not found in DB order {key_order.key_crm_id}')

@@ -4,7 +4,7 @@ from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
 from db.db_init import Session
 from db.models import UkrsalonOrderDB
-from parse.parse_insales_order import Order
+from parse.parse_insales_order import OrderInsales
 from parse.parse_constants import Status, ukrsalon_crm_id, insta_ukrsalon_crm_id
 from messengers import send_tg_message, send_service_tg_message
 from loguru import logger
@@ -21,7 +21,7 @@ logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-
            level='ERROR')
 
 
-def send_notification(order: Order, key_crm_id):
+def send_notification(order: OrderInsales, key_crm_id):
     if order.status_id != Status.CANCELLED.value:
         send_text = (f'{"НОВЫЙ" if order.status_id == Status.NEW.value else "Принят"} заказ {order.source_uuid} на Укрсалоне\n'
                      f'Сумма: {round(order.total_price)} грн.\n'
@@ -34,7 +34,7 @@ def send_notification(order: Order, key_crm_id):
         logger.info(send_text.replace('\n', ' '))
 
 
-def update_order_backoffice(order: Order):
+def update_order_backoffice(order: OrderInsales):
     ukrsalon.write_order(order.insales_id,
                          {'order': {
                              'shipping_address_attributes': {
@@ -47,7 +47,7 @@ def update_order_backoffice(order: Order):
                          })
 
 
-def update_client_backoffice(order: Order):
+def update_client_backoffice(order: OrderInsales):
     ukrsalon.write_client(order.buyer.id,
                           {'client': {
                               'phone': order.buyer.phone,
@@ -58,7 +58,7 @@ def update_client_backoffice(order: Order):
                           })
 
 
-def set_order_shop(order: Order) -> None:
+def set_order_shop(order: OrderInsales) -> None:
     """if order from instagram => CRMshop=Insta shop"""
     if 'instagram' in order.marketing.utm_source.lower():
         order.source_id = insta_ukrsalon_crm_id
@@ -80,7 +80,7 @@ def main():
             q = session.query(UkrsalonOrderDB).filter_by(source_uuid=order_dict['number']).first()
             if q is None:  # order not found in db
                 print('inserting order: ', order_dict['number'])
-                order = Order(**order_dict)
+                order = OrderInsales(**order_dict)
                 set_order_shop(order)
                 crm_reply = crm.new_order(order.dict())
                 try:
@@ -106,7 +106,7 @@ def main():
                 update_client_backoffice(order)
             else:
                 if not q.is_accepted:
-                    order = Order(**order_dict)
+                    order = OrderInsales(**order_dict)
                     if order.status_id != Status.NEW.value:
                         send_notification(order, q.key_crm_id)
                         q.is_accepted = True
