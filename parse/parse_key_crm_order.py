@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
 from parse.parse_constants import *
 from parse.process_xml import get_name_by_sku
 from common_funcs import international_phone
@@ -26,6 +26,10 @@ class ProductBuyer(BaseModel):
     price: float = Field(default=0, alias='price_sold')
     # purchased_price: float = Field(default=0, exclude=True)
     quantity: float
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True
+    )
 
     @field_validator('quantity')
     def convert(cls, value: str):

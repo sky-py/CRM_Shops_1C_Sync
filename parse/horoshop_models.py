@@ -77,7 +77,8 @@ class ProductHoroshop(BaseModel):
     available: Optional[Availability] = Field(default=None, alias='presence')
 
     model_config = ConfigDict(
-        populate_by_name=True
+        populate_by_name=True,
+        str_strip_whitespace=True
     )
 
     def model_dump(self, **kwargs) -> dict:

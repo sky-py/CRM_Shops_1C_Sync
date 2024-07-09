@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
 from parse.parse_constants import *
 from common_funcs import international_phone
 
@@ -34,6 +34,10 @@ class Product(BaseModel):
     name: Optional[str] = Field(default=None, alias='title')
     price: float = Field(default=0, alias='sale_price')
     quantity: int
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True
+    )
 
 
 class Shipping(BaseModel):
