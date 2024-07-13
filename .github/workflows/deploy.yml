@@ -21,4 +21,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_PORT }}
           script: |
-           cd /Scripts/CRM_Sync & git pull origin master & echo > async_prom_orders.reload & echo > in_server.reload & echo > sync_crm_1c.reload & echo > sync_horoshop_orders.reload & echo > sync_ukrsalon_crm.reload
+           cd /Scripts/CRM_Sync & git fetch --all & git reset --hard origin/master & echo > async_prom_orders.reload & echo > in_server.reload & echo > sync_crm_1c.reload & echo > sync_horoshop_orders.reload & echo > sync_ukrsalon_crm.reload
