@@ -9,12 +9,12 @@ from parse.parse_constants import Status, ukrsalon_crm_id, insta_ukrsalon_crm_id
 from messengers import send_tg_message, send_service_tg_message
 from loguru import logger
 from pathlib import Path
-
 from retry import retry
 
 ukrsalon = Insales(constants.UKRSALON_URL)
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
 
+reload_file = Path(__file__).with_suffix('.reload')
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
            level='INFO', backtrace=True, diagnose=True)
 logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
@@ -82,7 +82,7 @@ def main():
                 print('inserting order: ', order_dict['number'])
                 order = OrderInsales(**order_dict)
                 set_order_shop(order)
-                crm_reply = crm.new_order(order.dict())
+                crm_reply = crm.new_order(order.model_dump())
                 try:
                     if crm_reply.get('errors').get('source_uuid')[0] == 'The source uuid has already been taken.':
                         print('source_uuid: The source uuid has already been taken')
@@ -113,8 +113,13 @@ def main():
 
 
 if __name__ == '__main__':
+    logger.info(f'STARTING {__file__}')
     while True:
         main()
+        if reload_file.exists():
+            reload_file.unlink(missing_ok=True)
+            logger.info(f'SHUTTING DOWN {__file__}')
+            exit(0)
         print(f'Insales orders - sleeping {constants.time_to_sleep_insales_crm}')
         time.sleep(constants.time_to_sleep_insales_crm)
 

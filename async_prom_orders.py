@@ -13,11 +13,11 @@ from loguru import logger
 from messengers import send_tg_message, send_service_tg_message
 from sqlalchemy.future import select
 from pathlib import Path
-
 from retry import retry
 
 colorama.init()
 bad_orders = []
+reload_file = Path(__file__).with_suffix('.reload')
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
            level='INFO', backtrace=True, diagnose=True)
 logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
@@ -96,6 +96,9 @@ async def worker(shop: dict):
         orders = await get_orders(shop_client)
         await process_orders(orders, shop_name, color)
         print(color + f"PROM {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds")
+        if reload_file.exists():
+            logger.info(f'STOPPING {shop_name} thread')
+            return
         await asyncio.sleep(constants.prom_sleep_time)
 
 
@@ -141,8 +144,11 @@ async def process_new_order(order: OrderProm, session: Session_async):
 
 
 async def main():
+    logger.info(f'STARTING {__file__}')
     await create_tables()
     await asyncio.gather(*[worker(shop) for shop in constants.prom_shops])
+    reload_file.unlink(missing_ok=True)
+    logger.info(f'SHUTTING DOWN {__file__}')
 
 
 if __name__ == '__main__':

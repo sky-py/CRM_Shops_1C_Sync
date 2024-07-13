@@ -18,6 +18,7 @@ from retry import retry
 
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
 bad_orders = []
+reload_file = Path(__file__).with_suffix('.reload')
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
 
@@ -234,8 +235,13 @@ def process_cpa_refunds():
 
 
 if __name__ == '__main__':
+    logger.info(f'STARTING {__file__}')
     while True:
         print(f'Getting CRM orders for 1C...')
         main()
+        if reload_file.exists():
+            reload_file.unlink(missing_ok=True)
+            logger.info(f'SHUTTING DOWN {__file__}')
+            exit(0)
         print(f'Sleeping {constants.time_to_sleep_crm_1c} sec\n')
         time.sleep(constants.time_to_sleep_crm_1c)
