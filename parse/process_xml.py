@@ -1,8 +1,8 @@
 import xml.etree.cElementTree as ET
 import datetime
 from pathlib import Path
+from parse.parse_constants import sku_to_name_xml
 
-xml_file = Path('c:/Quad Solutions/files/1_ main/ukrstil_ua.xml')
 root = None
 
 
@@ -35,7 +35,7 @@ def get_xml_root(xml_file: Path | str):
 def get_name_by_sku(sku: str):
     global root
     if root is None or is_time(minute=0):
-        root = get_xml_root(xml_file)
+        root = get_xml_root(Path(sku_to_name_xml))
 
     for offer in root.findall(".//offer"):
         sku_tag = offer.find('vendorCode')
