@@ -76,16 +76,15 @@ async def get_orders(shop_client: HoroshopClient) -> list | None:
 @logger.catch
 async def worker(shop: dict):
     shop_client = HoroshopClient(shop_url=shop['url'], login=shop['login'], password=shop['password'])
-    shop_name = shop['name']
     color = get_color(shop)
-    print(color + f"START HOROSHOP {shop_name} ")
+    print(color + f'START HOROSHOP {shop['name']} ')
     await asyncio.sleep(random.randint(0, constants.prom_sleep_time))
     while True:
         orders = await get_orders(shop_client)
-        await process_orders(orders, shop_name, color)
-        print(color + f'HOROSHOP {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds')
+        await process_orders(orders, shop['name'], color)
+        print(color + f'HOROSHOP {shop['name']} - OK. Sleeping for {constants.prom_sleep_time} seconds')
         if reload_file.exists():
-            logger.info(f'STOPPING {shop_name} thread')
+            logger.info(f'STOPPING {shop['name']} thread')
             return
         await asyncio.sleep(constants.prom_sleep_time)
 
