@@ -75,7 +75,7 @@ async def get_orders(shop_client: HoroshopClient) -> list | None:
 
 @logger.catch
 async def worker(shop: dict):
-    shop_client = HoroshopClient(shop['login'], shop['password'])
+    shop_client = HoroshopClient(shop_url=shop['url'], login=shop['login'], password=shop['password'])
     shop_name = shop['name']
     color = get_color(shop)
     print(color + f"START HOROSHOP {shop_name} ")

@@ -12,11 +12,11 @@ class Route(Enum):
 
 
 class HoroshopClient:
-    main_url = 'http://shop233144.horoshop.ua/api/'
     headers = {'Content-type': 'application/json'}
     REQUEST_TIMEOUT = 20
 
-    def __init__(self, login, password):
+    def __init__(self, shop_url, login, password):
+        self.main_url = shop_url.strip('/') + '/api/'
         self.client = httpx.Client()
         self.token = self.get_token(login, password)
 
