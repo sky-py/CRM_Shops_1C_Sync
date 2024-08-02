@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 
 
-load_dotenv('etc/env/sms.env')
+load_dotenv('/etc/env/sms.env')
 
 DO_SEND_SMS = True if os.getenv('DO_SEND_SMS') == 'True' else False
 sms_login = os.getenv('sms_login')
