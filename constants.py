@@ -60,7 +60,11 @@ PROM_TIME_INTERVAL_TO_CHECK = 1320  # minutes (twenty-four hours)
 
 # ================================================= HOROSHOP =============================================
 horoshop_shops = [
-    {'name': Shops.KLIMAZON.value, 'url': 'https://klimazon.com', 'login': os.getenv('HOROSHOP_LOGIN'), 'password': os.getenv('HOROSHOP_PASSWORD'), 'managers': managers_plus},
+    {'name': Shops.KLIMAZON.value,
+     'url': 'https://klimazon.com',
+     'login': os.getenv('HOROSHOP_LOGIN'),
+     'password': os.getenv('HOROSHOP_PASSWORD'),
+     'managers': managers_plus},
 ]
 
 HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1320  # minutes (twenty-four hours)
