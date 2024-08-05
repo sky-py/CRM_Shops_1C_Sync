@@ -49,7 +49,6 @@ json_archive_1C_path = os.getenv('json_archive_1C_path')
 prom_shops = [
     {'name': Shops.UKRSTIL.value, 'token': os.getenv('prom_ukrstil_orders_r'), 'managers': managers_plus},
     {'name': Shops.BEAUTY_MARKET.value, 'token': os.getenv('prom_beauty_orders_r'), 'managers': managers_plus},
-    {'name': Shops.KLIMAZON.value, 'token': os.getenv('prom_klimazon_orders_r'), 'managers': managers_plus},
     {'name': Shops.KRASUNIA.value, 'token': os.getenv('prom_krasunia_orders_r'), 'managers': managers_plus},
 ]
 
