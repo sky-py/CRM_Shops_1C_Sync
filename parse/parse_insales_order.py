@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field, model_validator, field_validator, ConfigD
 from parse.parse_constants import *
 from common_funcs import international_phone
 
+MAX_TEXT_LENGTH = 245
 
 class Client(BaseModel):
     id: int = Field(exclude=True)
@@ -42,6 +43,10 @@ class Product(BaseModel):
 
 class Shipping(BaseModel):
     shipping_receive_point: str = Field(default='', alias='full_delivery_address')
+
+    @field_validator('shipping_receive_point')
+    def cut_value(cls, value):
+        return value[:MAX_TEXT_LENGTH]
 
 
 class Payment(BaseModel):
