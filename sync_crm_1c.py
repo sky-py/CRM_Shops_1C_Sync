@@ -47,6 +47,8 @@ def normalize_fio(fio: str) -> str:
     except Exception as e:
         send_service_tg_message(str(e))
     else:
+        if new_fio != fio:
+            logger.info(f'AI changed {fio} to {new_fio}')
         return ' '.join([word.capitalize() for word in new_fio.split(' ')]) if new_fio else fio
 
 
