@@ -10,3 +10,5 @@ asyncpg
 httpx
 colorama
 blessed
+openai
+pyTelegramBotAPI

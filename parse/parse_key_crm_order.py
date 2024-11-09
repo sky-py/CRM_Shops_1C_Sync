@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field, model_validator, field_validator, ConfigD
 from parse.parse_constants import *
 from parse.process_xml import get_name_by_sku
 from common_funcs import international_phone
+# from messengers import send_service_tg_message
+# from parse.ai import reorder_names
 
 
 class OrderKeyCrmShort(BaseModel):
@@ -53,6 +55,15 @@ class Buyer(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     has_duplicates: bool = Field(exclude=True, default=False)
+
+    # @field_validator('full_name')
+    # def normalize(cls, value: str):
+    #     try:
+    #         new_name = reorder_names(value)
+    #     except Exception as e:
+    #         send_service_tg_message(str(e))
+    #     else:
+    #         return ' '.join([word.capitalize() for word in new_name.split(' ')]) if new_name else value
 
 
 class Shipping(BaseModel):

@@ -6,6 +6,7 @@ from parse.parse_constants import Shops
 load_dotenv('/etc/env/tg.env')
 load_dotenv('/etc/env/crm.env')
 load_dotenv('/etc/env/dev.env')
+load_dotenv('/etc/env/ai.env')
 
 IS_PRODUCTION_SERVER = True if os.getenv('IS_PRODUCTION_SERVER') == 'True' else False
 
@@ -69,4 +70,7 @@ horoshop_shops = [
 HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1320  # minutes (twenty-four hours)
 horoshop_sleep_time = 5  # sec
 horoshop_stop_tries_after_delay = 200  # sec
+
+# ================================================= AI =============================================
+OPENAI_UKRSALON_API_KEY = os.getenv('OPENAI_UKRSALON_API_KEY')
 

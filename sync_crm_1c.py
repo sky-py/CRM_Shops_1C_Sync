@@ -14,6 +14,7 @@ from send_sms import send_ttn_sms
 from loguru import logger
 from messengers import send_service_tg_message
 from retry import retry
+from parse.ai import reorder_names
 
 
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
@@ -40,8 +41,19 @@ def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[Produc
     return children_products
 
 
+def normalize_fio(fio: str) -> str:
+    try:
+        new_fio = reorder_names(fio)
+    except Exception as e:
+        send_service_tg_message(str(e))
+    else:
+        return ' '.join([word.capitalize() for word in new_fio.split(' ')]) if new_fio else fio
+
+
 def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye,
                      include_keys=None, exclude_keys=None):
+    if type(order) is Order1CBuyer:
+        order.buyer.full_name = normalize_fio(order.buyer.full_name)
     text = json.dumps(order.model_dump(mode='json', include=include_keys, exclude=exclude_keys),
                       ensure_ascii=False, indent=4)
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
