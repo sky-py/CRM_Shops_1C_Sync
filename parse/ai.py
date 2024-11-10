@@ -1,8 +1,11 @@
+from asyncio import timeout
+
 import constants
 from openai import OpenAI
 
 client = OpenAI(api_key=constants.OPENAI_UKRSALON_API_KEY)
 model = 'gpt-4o-mini'
+timeout = 5
 
 def reorder_names(fio: str) -> str:
     completion = client.chat.completions.create(
@@ -18,7 +21,8 @@ def reorder_names(fio: str) -> str:
                                         '(не нужно передавать часть слов или символов!) .\n'
                                         'Итак, вот данные клиента:\n'
                                         '{fio}'.format(fio=fio)}   # <-- This is the user message for which the model will generate a response
-        ]
+        ],
+        timeout=timeout
     )
 
     answer = completion.choices[0].message.content
