@@ -44,11 +44,12 @@ def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[Produc
 def normalize_fio(fio: str) -> str:
     try:
         new_fio = reorder_names(fio)
+        logger.info(f'AI changed {fio} to {new_fio}')
     except Exception as e:
         send_service_tg_message(str(e))
     else:
-        if new_fio != fio:
-            logger.info(f'AI changed {fio} to {new_fio}')
+        # if new_fio != fio:
+        #     logger.info(f'AI changed {fio} to {new_fio}')
         return ' '.join([word.capitalize() for word in new_fio.split(' ')]) if new_fio else fio
 
 
