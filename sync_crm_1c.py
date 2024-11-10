@@ -47,6 +47,7 @@ def normalize_fio(fio: str) -> str:
         logger.info(f'AI changed {fio} to {new_fio}')
     except Exception as e:
         send_service_tg_message(str(e))
+        return fio
     else:
         # if new_fio != fio:
         #     logger.info(f'AI changed {fio} to {new_fio}')
