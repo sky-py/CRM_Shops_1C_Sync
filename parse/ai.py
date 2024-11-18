@@ -7,7 +7,7 @@ client = OpenAI(api_key=constants.OPENAI_UKRSALON_API_KEY)
 model = 'gpt-4o-mini'
 timeout = 5
 
-def reorder_names(fio: str) -> str:
+def ai_reorder_names(fio: str) -> str:
     completion = client.chat.completions.create(
         model= model,
         messages=[

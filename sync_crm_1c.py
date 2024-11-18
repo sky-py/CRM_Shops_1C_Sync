@@ -14,7 +14,7 @@ from send_sms import send_ttn_sms
 from loguru import logger
 from messengers import send_service_tg_message
 from retry import retry
-from parse.ai import reorder_names
+from parse.ai import ai_reorder_names
 
 
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
@@ -43,15 +43,20 @@ def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[Produc
 
 def normalize_fio(fio: str) -> str:
     try:
-        new_fio = reorder_names(fio)
-        logger.info(f'AI changed {fio} to {new_fio}')
+        new_fio = ai_reorder_names(fio)
     except Exception as e:
-        send_service_tg_message(str(e))
+        logger.error(f'AI failed to reorder names in {fio} | {str(e)}')
         return fio
     else:
-        # if new_fio != fio:
-        #     logger.info(f'AI changed {fio} to {new_fio}')
-        return ' '.join([word.capitalize() for word in new_fio.split(' ')]) if new_fio else fio
+        if not new_fio:
+            logger.info(f'AI did not recognized proper names in {fio}')
+            return fio
+        elif new_fio != fio:
+            logger.info(f'AI changed {fio} to {new_fio}')
+            return ' '.join([word.capitalize() for word in new_fio.split(' ')])
+        else:
+            logger.info(f'AI left name the same')
+            return fio
 
 
 def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye,
