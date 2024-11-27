@@ -7,7 +7,7 @@ from datetime import datetime
 
 
 def get_price(price: str) -> float:
-    return float(''.join(re.findall(r'[\d.]', price)))
+    return float(''.join(re.findall(r'[\d.,]', price)).replace(',', '.'))
 
 
 class Product(BaseModel):
