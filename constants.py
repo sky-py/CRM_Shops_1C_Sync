@@ -34,9 +34,8 @@ klimazon_tg = os.getenv('klimazon_tg')
 krasunia_tg = os.getenv('krasunia_tg')
 lida_tg = os.getenv('lida_tg')
 rop_tg = os.getenv('rop_tg')
-ilona_tg = os.getenv('ilona_tg')
 
-managers = [ukrsalon_tg, ukrstil_tg, beauty_tg, klimazon_tg, krasunia_tg, lida_tg, ilona_tg]
+managers = [ukrsalon_tg, ukrstil_tg, beauty_tg, klimazon_tg, krasunia_tg, lida_tg]
 managers_plus = [*managers, director_tg, rop_tg]
 
 time_to_sleep_insales_crm = 5   # sec
