@@ -1,10 +1,8 @@
 from typing import Optional
 from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
 from parse.parse_constants import *
-from parse.process_xml import get_name_by_sku
+from parse.process_xml import get_name_and_category_by_sku
 from common_funcs import international_phone
-# from messengers import send_service_tg_message
-# from parse.ai import reorder_names
 
 
 class OrderKeyCrmShort(BaseModel):
@@ -25,6 +23,7 @@ class OrderKeyCrmShort(BaseModel):
 class ProductBuyer(BaseModel):
     sku: str = Field(default=None)
     name: str
+    category: Optional[int] = Field(default=None)
     price: float = Field(default=0, alias='price_sold')
     # purchased_price: float = Field(default=0, exclude=True)
     quantity: float
@@ -121,10 +120,12 @@ class Order1CBuyer(BaseModel):
 
         for product in model['products']:
             if product['sku']:
-                if new_name := get_name_by_sku(product['sku']):
+                new_name, category = get_name_and_category_by_sku(product['sku'])
+                if new_name:
                     product['name'] = new_name
                 elif product['name'][:3].isupper():
                     product['name'] = product['name'].capitalize()
+                product['category'] = category
 
         for custom_field in model['custom_fields']:
             if custom_field['name'] == 'Постачальник':

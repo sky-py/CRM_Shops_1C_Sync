@@ -1,7 +1,7 @@
 import xml.etree.cElementTree as ET
 import datetime
 from pathlib import Path
-from parse.parse_constants import sku_to_name_xml
+from parse.parse_constants import sku_to_name_xml_file
 
 root = None
 
@@ -32,16 +32,19 @@ def get_xml_root(xml_file: Path | str):
     return tree.getroot()
 
 
-def get_name_by_sku(sku: str):
+def get_name_and_category_by_sku(sku: str) -> tuple[str, int]:
     global root
     if root is None or is_time(minute=0):
-        root = get_xml_root(Path(sku_to_name_xml))
+        root = get_xml_root(Path(sku_to_name_xml_file))
 
     for offer in root.findall(".//offer"):
         sku_tag = offer.find('vendorCode')
         name_tag = offer.find('name')
         if sku_tag is not None and name_tag is not None:
             if sku_tag.text.lower() == sku.lower():
-                return name_tag.text
+                name = name_tag.text
+                category_tag = offer.find('categoryId')
+                category = int(category_tag.text) if category_tag is not None and category_tag.text else None
+                return name, category
 
 
