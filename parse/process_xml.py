@@ -8,7 +8,7 @@ from parse.parse_constants import sku_to_name_xml_file
 root = None
 
 
-def is_time(hour: int = None, minute: int = None) -> bool:
+def is_time(hour: Optional[int] = None, minute: Optional[int] = None) -> bool:
     """
     Checks if the current time is within a 10-minute window after the specified hour and minute.
 
