@@ -2,7 +2,7 @@ import os
 import telebot
 from dotenv import load_dotenv
 
-load_dotenv('c:/Scripts/env/tg.env')
+load_dotenv('/etc/env/tg.env')
 
 admin_tg = os.getenv('admin_tg')
 tg_token_salon = os.getenv('tg_token_salon')

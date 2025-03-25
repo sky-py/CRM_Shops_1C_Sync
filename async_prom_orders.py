@@ -76,16 +76,21 @@ def get_timestamp(minutes_ago: int):
     return past_time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def order_date_is_valid(date: str) -> bool:
+    return datetime.fromisoformat(date).replace(tzinfo=None) > datetime.now() - timedelta(days=90)
+
+
 @retry(stop_after_delay=constants.prom_stop_tries_after_delay)
 async def get_orders(shop_client: PromClient) -> list | None:
     from_date = get_timestamp(minutes_ago=constants.PROM_TIME_INTERVAL_TO_CHECK)
     r = await shop_client.get_orders(last_modified_from=from_date, limit=1000)
     # r = await shop_client.get_orders(date_from='2024-05-01T00:00:00', limit=1000)
     r.raise_for_status()
-    return r.json()['orders']
+    orders = r.json()['orders']
+    return [order for order in orders if order_date_is_valid(order['date_created'])]
 
 
-@logger.catch
+@logger.catch   # TODO inform worker does not run
 async def worker(shop: dict):
     shop_client = PromClient(shop['token'])
     color = get_color(shop)
@@ -155,8 +160,3 @@ if __name__ == '__main__':
     if platform.system() == 'Windows':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())
-
-
-
-
-

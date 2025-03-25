@@ -1,7 +1,7 @@
-test*.py
+test*.*
 Backup/
 log/
-
+.lh/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

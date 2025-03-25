@@ -17,10 +17,14 @@ class PromClient:
 
     async def make_request(self, url, method='GET', params=None, data=None, tries=1):
         match method:
-            case 'GET': r = await self.client.get(url=f'{main_url}{url}', params=params, headers=self.headers, timeout=REQUEST_TIMEOUT)
-            case 'POST': r = await self.client.post(url=f'{main_url}{url}', data=data, headers=self.headers, timeout=REQUEST_TIMEOUT)
-            case 'PUT': r = await self.client.put(url=f'{main_url}{url}', data=data, headers=self.headers, timeout=REQUEST_TIMEOUT)
-            case _: raise Exception('Unknown method')
+            case 'GET':
+                r = await self.client.get(url=f'{main_url}{url}', params=params, headers=self.headers, timeout=REQUEST_TIMEOUT)
+            case 'POST':
+                r = await self.client.post(url=f'{main_url}{url}', data=data, headers=self.headers, timeout=REQUEST_TIMEOUT)
+            case 'PUT':
+                r = await self.client.put(url=f'{main_url}{url}', data=data, headers=self.headers, timeout=REQUEST_TIMEOUT)
+            case _:
+                raise Exception('Unknown method')
         return r
 
     async def get_order(self, order_id: int) -> httpx.Response:
@@ -36,7 +40,7 @@ class PromClient:
         :param date_from: Запит замовлень, створених до вказаної дати. Приклад - 2015-04-28T12:50:34
         :param date_to: Запит замовлень, створених до вказаної дати. Приклад - 2015-04-28T12:50:34
         """
-        params = dict()
+        params = {}
         if limit:
             params['limit'] = limit
         if last_modified_from:
@@ -48,7 +52,7 @@ class PromClient:
         if date_to:
             params['date_to'] = date_to
 
-        return await self.make_request(url=f'/orders/list', params=params)
+        return await self.make_request(url='/orders/list', params=params)
 
     async def get_products(self, limit=None) -> httpx.Response:
         limit = f'?limit={limit}' if limit else ""
@@ -73,4 +77,3 @@ class PromClient:
 
     async def get_messages(self, limit=results_per_page) -> httpx.Response:
         return await self.make_request(f'/messages/list?limit={limit}')
-
