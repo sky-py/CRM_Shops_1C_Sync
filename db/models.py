@@ -30,8 +30,8 @@ class Order1CDB(Base):
     __tablename__ = 'orders_1c'
     id = Column(Integer, primary_key=True)
     document_type = Column(Enum(Document1C))
-    key_crm_id = Column(Integer, default=None)
-    parent_id = Column(Integer, default=None)   # None for Buyer order, not None for Supplier order
+    key_crm_id = Column(String(20), default=None, index=True)
+    parent_id = Column(String(20), default=None)   # None for Buyer order, not None for Supplier order
     tracking_code = Column(String, default=None)
     supplier_id = Column(String, default=None)
 
@@ -48,6 +48,7 @@ class PromOrderDB(Base):
     cpa_commission = Column(Float, default=0.0)
     cpa_is_refunded = Column(Boolean, default=False)
     ordered_at = Column(DateTime(timezone=True), default=func.now())
+    delivery_commission = Column(Float, default=0.0)
 
     def __repr__(self):
         return f'Order {self.order_id} Shop:{self.shop} is_accepted:{self.is_accepted} CPA:{self.CPA_comission}'
