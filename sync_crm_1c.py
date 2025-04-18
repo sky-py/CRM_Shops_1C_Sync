@@ -2,6 +2,7 @@ import time
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 import constants
 from api.key_crm_api import KeyCRM
 from db.db_init import Session
@@ -75,14 +76,16 @@ def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | 
         logger.info(f'Updated {add_text} for Supplier order, key_crm_id = {order.key_crm_id}')
 
 
-def add_to_track_and_sms(order: Order1CSupplier):
+def add_to_track_and_sms(order: Order1CSupplier, old_ttn_number: Optional[str] = None):
     phone = order.buyer.phone if order.shipping.recipient_phone is None else order.shipping.recipient_phone
     fio = order.buyer.full_name if order.shipping.recipient_full_name is None else order.shipping.recipient_full_name
-    if add_ttn_to_db(tracking_code=order.tracking_code,
+    if add_ttn_to_db(ttn_number=order.tracking_code,
                      shop_sql_id=order.shop_sql_id,
                      fio=fio,
                      phone=phone,
-                     manager=order.manager):
+                     manager=order.manager,
+                     old_ttn_number=old_ttn_number
+                     ):
         send_ttn_sms(phone=phone, tracking_code=order.tracking_code, shop_sql_id=order.shop_sql_id)
 
 
@@ -153,14 +156,14 @@ def process_new_supplier_order(order: Order1CSupplier | Order1CSupplierPromCommi
     create_json_file(order, exclude_keys={'buyer', 'shipping', 'payment'})
 
     if order.tracking_code:
-        add_to_track_and_sms(order)
+        add_to_track_and_sms(order=order)
 
 
 def process_existing_supplier_order(order: Order1CSupplierUpdate, db_order: Order1CDB):
-    if order.tracking_code and not db_order.tracking_code:  # but valid tracking code is not in db
+    if order.tracking_code and order.tracking_code != db_order.tracking_code:  # order tracking code is new or changed
+        add_to_track_and_sms(order=order, old_ttn_number=db_order.tracking_code)
         order.supplier_id = None
         db_order.tracking_code = order.tracking_code
-        add_to_track_and_sms(order)
         create_json_file(order, include_keys={'action', 'key_crm_id', 'tracking_code', 'supplier_id'})
     elif order.supplier_id and not db_order.supplier_id:  # but valid supplier number is not in db
         order.tracking_code = None

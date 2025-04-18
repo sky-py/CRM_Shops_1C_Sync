@@ -1,10 +1,11 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-from sqlalchemy.ext.automap import automap_base
-from datetime import date
-from common_funcs import international_phone
 import os
+from datetime import date
+from typing import Optional
+from common_funcs import international_phone
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy.orm import Session
 
 load_dotenv('/etc/env/db.env')
 
@@ -26,23 +27,29 @@ def write_record_to_db(new_ttn: TTN):
     session.commit()
 
 
-def ttn_number_exist(ttn_number):
+def get_record_by_ttn(ttn_number):
     q = session.query(TTN).filter_by(ttn_number=ttn_number).first()
-    if q:
-        return True
+    return q
 
 
-def add_ttn_to_db(tracking_code: str, shop_sql_id: int, fio: str, phone: str, manager: str) -> bool:
-    if ttn_number_exist(tracking_code):
+def stop_track_ttn(ttn_number: Optional[str]) -> None:
+    if ttn_number is not None:
+        q = get_record_by_ttn(ttn_number)
+        if q is not None:
+            q.finished = 8  # ttn is changed 
+            session.commit()
+
+
+def add_ttn_to_db(ttn_number: str, shop_sql_id: int, fio: str, phone: str, manager: str, old_ttn_number: Optional[str] = None) -> bool:
+    stop_track_ttn(old_ttn_number)
+    if get_record_by_ttn(ttn_number) is not None:
+        print(f'TTN {ttn_number} already exists in the database')
         return False
     phone = international_phone(phone).removeprefix('+38') if phone else phone
-    write_record_to_db(TTN(ttn_number=tracking_code,
+    write_record_to_db(TTN(ttn_number=ttn_number,
                            shop=shop_sql_id,
                            fio=fio,
                            phone=phone,
                            delivery_date=date(year=2002, month=2, day=2),
                            manager=manager))
     return True
-
-
-
