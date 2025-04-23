@@ -139,8 +139,8 @@ def get_completed_orders() -> list:
 
 @retry(stop_after_delay=120)
 def get_last_created_orders(minutes: int) -> list:
-    # my_filter = {'created_between': make_time_interval(minutes + constants.KEY_TIME_SHIFT)} #! TODO return to this
-    my_filter = {'created_between': '2024-05-01 00:00:00, 2025-04-25 23:59:59'} #? TODO comment this line for production
+    my_filter = {'created_between': make_time_interval(minutes + constants.KEY_TIME_SHIFT)}
+    # my_filter = {'created_between': '2024-05-01 00:00:00, 2025-04-25 23:59:59'} #  for getting all orders from date
     orders = crm.get_orders(last_orders_amount=0, filter=my_filter)
     print(
         f'{len(orders)} orders were CREATED during last {minutes} minutes (time shift = {constants.KEY_TIME_SHIFT})\n'
@@ -269,10 +269,10 @@ def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefu
 
 @logger.catch
 def main():
+    crm_orders = get_last_modified_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)
+    # crm_orders = get_last_created_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)
     # crm_orders = crm.get_orders(last_orders_amount=constants.KEY_MAX_PROCESSING_ORDERS)
     # crm_orders = get_active_orders() + get_completed_orders()
-    crm_orders = get_last_created_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)  #? TODO comment this line for production
-    # crm_orders = get_last_modified_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)    #! TODO return to this
     print(f'Got {len(crm_orders)} orders')
     if len(crm_orders) > constants.KEY_MAX_PROCESSING_ORDERS:
         logger.error('Too many orders (more than {constants.KEY_MAX_PROCESSING_ORDERS}) to process in CRM')
@@ -300,7 +300,7 @@ def process_orders(crm_orders: list[dict]):
                     for product in find_childs_products(order_dict, crm_orders):
                         order.products.append(product)  # adding child products to order
                     process_new_buyer_order(order)
-                make_supplier_comission_orders(order)   #! TODO move to if block for production
+                    make_supplier_comission_orders(order)   # untab this line for testing purposes
 
             if order.supplier:   # Supplier present, this is a Supplier order or also a Supplier order
                 order = Order1CSupplier(**order_dict)
@@ -333,4 +333,5 @@ if __name__ == '__main__':
             logger.info(f'SHUTTING DOWN {__file__}')
             exit(0)
         print(f'Sleeping {constants.time_to_sleep_crm_1c} sec\n')
-        time.sleep(3600) # (constants.time_to_sleep_crm_1c) #! TODO comment this line for production
+        time.sleep(constants.time_to_sleep_crm_1c)
+        # time.sleep(3600)  # for testing purposes, remove in production

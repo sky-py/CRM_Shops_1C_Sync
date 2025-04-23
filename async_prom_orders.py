@@ -89,11 +89,11 @@ def order_date_is_valid(date: str) -> bool:
 
 @retry(stop_after_delay=constants.prom_stop_tries_after_delay)
 async def get_orders(shop_client: PromClient) -> list | None:
-    # from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK)  # TODO return to this
-    # orders = await shop_client.get_orders(last_modified_from=from_date, limit=1000)  # TODO return to this
-    orders = await shop_client.get_orders(date_from=datetime(year=2024, month=5, day=1), date_to=datetime.now(), limit=1000)  # TODO comment this line for production
-    return orders
-    # return [order for order in orders if order_date_is_valid(order['date_created'])]  # TODO return to this
+    from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK)
+    orders = await shop_client.get_orders(last_modified_from=from_date, limit=1000)
+    return [order for order in orders if order_date_is_valid(order['date_created'])]
+    # orders = await shop_client.get_orders(date_from=datetime(year=2024, month=5, day=1), date_to=datetime.now(), limit=1000)  # for getting all orders from date
+    # return orders  # for getting all orders from date
 
 
 @logger.catch  # TODO inform worker does not run
@@ -105,13 +105,14 @@ async def worker(shop: dict):
     await asyncio.sleep(random.randint(0, constants.prom_sleep_time))
     while True:
         orders = await get_orders(shop_client)
-        print(len(orders))
+        # print(f'{shop_name} got {len(orders)} orders')  # for testing purposes
         await process_orders(orders, shop_name, color)
         print(color + f'PROM {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds')
         if reload_file.exists():
             logger.info(f'STOPPING {shop_name} thread')
             return
-        await asyncio.sleep(3600) # (constants.prom_sleep_time)  # TODO return to this
+        await asyncio.sleep(constants.prom_sleep_time)
+        # await asyncio.sleep(3600) # for testing purposes, remove in production
 
 
 async def process_orders(orders: list, shop_name: str, color: str):
