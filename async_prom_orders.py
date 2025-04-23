@@ -74,7 +74,7 @@ async def add_order_to_db(order: OrderProm, session: Session_async):
 
 async def add_order_to_cpa_queue(order: OrderProm, session: Session_async):
     session.add(PromCPARefundQueueDB(order_id=order.order_id, shop=order.shop, cpa_commission=order.cpa_commission))
-    logger.info(f'Added {order.shop}:{order.order_id} to cpa refund queue')
+    logger.info(f'Added {order.shop}:{order.order_id} with CPA commission {order.cpa_commission} to cpa refund queue')
 
 
 def get_color(shop: dict) -> str:
@@ -82,23 +82,18 @@ def get_color(shop: dict) -> str:
     return f'\033[{31 + i % 6}m'
 
 
-def get_timestamp(minutes_ago: int):
-    past_time = datetime.now() - timedelta(minutes=minutes_ago)
-    return past_time.strftime('%Y-%m-%dT%H:%M:%S')
-
-
 def order_date_is_valid(date: str) -> bool:
-    return datetime.fromisoformat(date).replace(tzinfo=None) > datetime.now() - timedelta(days=90)
+    return datetime.fromisoformat(date).replace(tzinfo=None) > (datetime.now() -
+            timedelta(days=constants.PROM_DAYS_TO_CONSIDER_ORDER_FINISHED))
 
 
 @retry(stop_after_delay=constants.prom_stop_tries_after_delay)
 async def get_orders(shop_client: PromClient) -> list | None:
-    from_date = get_timestamp(minutes_ago=constants.PROM_TIME_INTERVAL_TO_CHECK)
-    r = await shop_client.get_orders(last_modified_from=from_date, limit=1000)
-    # r = await shop_client.get_orders(date_from='2024-05-01T00:00:00', limit=2000)
-    r.raise_for_status()
-    orders = r.json()['orders']
-    return [order for order in orders if order_date_is_valid(order['date_created'])]
+    # from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK)  # TODO return to this
+    # orders = await shop_client.get_orders(last_modified_from=from_date, limit=1000)  # TODO return to this
+    orders = await shop_client.get_orders(date_from=datetime(year=2024, month=5, day=1), date_to=datetime.now(), limit=1000)  # TODO comment this line for production
+    return orders
+    # return [order for order in orders if order_date_is_valid(order['date_created'])]  # TODO return to this
 
 
 @logger.catch  # TODO inform worker does not run
@@ -110,12 +105,13 @@ async def worker(shop: dict):
     await asyncio.sleep(random.randint(0, constants.prom_sleep_time))
     while True:
         orders = await get_orders(shop_client)
+        print(len(orders))
         await process_orders(orders, shop_name, color)
         print(color + f'PROM {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds')
         if reload_file.exists():
             logger.info(f'STOPPING {shop_name} thread')
             return
-        await asyncio.sleep(constants.prom_sleep_time)
+        await asyncio.sleep(3600) # (constants.prom_sleep_time)  # TODO return to this
 
 
 async def process_orders(orders: list, shop_name: str, color: str):
@@ -126,12 +122,10 @@ async def process_orders(orders: list, shop_name: str, color: str):
                     order = OrderProm(**order_dict)
                     order.shop = shop_name
                     await process_one_order(order, session, color)
-                except:
+                except Exception as e:
                     if order_dict['id'] not in bad_orders:
                         logger.error(f'Problem with {shop_name} - order: {order_dict["id"]}')
                         bad_orders.append(order_dict['id'])
-                    else:
-                        pass
 
 
 async def process_one_order(order: OrderProm, session: Session_async, color: str):

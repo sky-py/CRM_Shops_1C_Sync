@@ -55,6 +55,7 @@ prom_shops = [
 prom_sleep_time = 5  # sec
 prom_stop_tries_after_delay = 200  # sec
 PROM_TIME_INTERVAL_TO_CHECK = 1320  # minutes (twenty-four hours)
+PROM_DAYS_TO_CONSIDER_ORDER_FINISHED = 60  # days
 
 
 # ================================================= HOROSHOP =============================================

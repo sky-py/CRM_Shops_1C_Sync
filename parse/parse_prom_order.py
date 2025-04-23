@@ -69,10 +69,17 @@ class OrderProm(BaseModel):
 
         if model['has_order_promo_free_delivery']:
             try:
-                match = re.search(r'([\d.]+) грн — продавец', model['ps_promotion']['conditions'][0])
-                model['delivery_commision'] = float(match.group(1))  # type: ignore
+                if model['ps_promotion']['name'] != 'Дешевая доставка':
+                    raise Exception(f'Promo free delivery name "Дешевая доставка" not found at order {model["id"]}')
+                for condition in model['ps_promotion']['conditions']:
+                    match = re.search(r'([\d.]+).?грн.{0,4}продавец', condition, re.DOTALL)
+                    if match:
+                        model['delivery_commision'] = float(match.group(1))  # type: ignore
+                        break
+                else:
+                    raise Exception(f'Promo free delivery conditions not found at order {model["id"]}')
             except Exception as e:
-                logger.error(f'Promo free delivery conditions not found at order {model["id"]}: {e}')
+                logger.error(f'Error processing Promo free delivery commision at order {model["id"]}: {e}')
 
         model['client'] = {}
         model['client']['phone'] = international_phone(model.get('phone', ''))

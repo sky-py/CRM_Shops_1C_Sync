@@ -86,10 +86,10 @@ def create_json_file(
     (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
     (Path(constants.json_archive_1C_path) / json_file).write_text(data=text, encoding='utf-8')
     if type(order) is not Order1CSupplierUpdate:
-        logger.info(f'Created {order.document_type.value}, key_crm_id = {order.key_crm_id}')
+        logger.info(f'Created JSON file for {order}')
     else:
         add_text = f'TTN to {order.tracking_code}' if order.tracking_code else f'Supplier_id to {order.supplier_id}'
-        logger.info(f'Updated {add_text} for Supplier order, key_crm_id = {order.key_crm_id}')
+        logger.info(f'Created JSON file for order {order} and Updated {add_text} for Supplier order')
 
 
 def add_to_track_and_sms(order: Order1CSupplier):
@@ -134,7 +134,8 @@ def get_completed_orders() -> list:
 
 @retry(stop_after_delay=120)
 def get_last_created_orders(minutes: int) -> list:
-    my_filter = {'created_between': make_time_interval(minutes + constants.KEY_TIME_SHIFT)}
+    # my_filter = {'created_between': make_time_interval(minutes + constants.KEY_TIME_SHIFT)} #! TODO return to this
+    my_filter = {'created_between': '2024-05-01 00:00:00, 2025-04-25 23:59:59'} #? TODO comment this line for production
     orders = crm.get_orders(last_orders_amount=0, filter=my_filter)
     print(
         f'{len(orders)} orders were CREATED during last {minutes} minutes (time shift = {constants.KEY_TIME_SHIFT})\n'
@@ -157,8 +158,17 @@ def is_order_valid(order: Order1CBuyer) -> bool:
     return order.push_to_1C and order.manager and order.buyer and order.buyer.phone and not order.buyer.has_duplicates
 
 
-def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder):
+def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder) -> bool:
+    """
+    Adds the order to the database if it doesn't exist yet.
+    :param order: The order to add to the database.
+    :return: True if the order was added, False if it already existed.
+    """
     with Session.begin() as session:
+        if session.query(Order1CDB).filter_by(key_crm_id=order.key_crm_id, document_type=order.document_type).first():
+            logger.info(f'DOESN\'t add order to db (already exists) key_crm_id: {order.key_crm_id}, '
+                        f'type: {order.document_type.value}')
+            return False
         if type(order) is Order1CBuyer:
             session.add(Order1CDB(key_crm_id=order.key_crm_id, document_type=order.document_type))
         else:
@@ -171,18 +181,21 @@ def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromC
                     supplier_id=order.supplier_id,
                 )
             )
+        logger.info(f'Added Order {order} to db')
+        return True
+        
 
 
 def process_new_buyer_order(order: Order1CBuyer):
-    add_order_to_db(order)
-    create_json_file(order)
+    if add_order_to_db(order):
+        create_json_file(order)
 
 
 def process_new_supplier_order(order: Order1CSupplier | Order1CSupplierPromCommissionOrder):
     if order.parent_id is None:
         order.parent_id = order.key_crm_id
-    add_order_to_db(order)
-    create_json_file(order, exclude_keys={'buyer', 'shipping', 'payment'})
+    if add_order_to_db(order):
+        create_json_file(order, exclude_keys={'buyer', 'shipping', 'payment'})
 
     if order.tracking_code:
         add_to_track_and_sms(order)
@@ -204,7 +217,6 @@ def make_supplier_comission_orders(buyer_order: Order1CBuyer):
     with Session.begin() as session:
         prom_order = session.query(PromOrderDB).filter_by(order_id=buyer_order.source_uuid).first()
         if prom_order is not None:  # if order at Prom orders
-            # TODO comment starts here
             if prom_order.cpa_commission > 0:  # if order has CPA commission
                 commission_order = Order1CSupplierPromCommissionOrder(
                     key_crm_id=f'{prom_order.order_id}',
@@ -215,7 +227,6 @@ def make_supplier_comission_orders(buyer_order: Order1CBuyer):
                 )
                 process_new_supplier_order(commission_order)
                 make_postupleniye_for_commission_order(commission_order)
-            # TODO comment ends here
 
             if prom_order.delivery_commission > 0:  # if order has delivery commission
                 commission_order = Order1CSupplierPromCommissionOrder(
@@ -236,8 +247,8 @@ def make_postupleniye_for_commission_order(commission_order: Order1CSupplierProm
         supplier=commission_order.supplier,
         products=commission_order.products,
     )
-    add_order_to_db(postupleniye)
-    create_json_file(postupleniye)
+    if add_order_to_db(postupleniye):
+        create_json_file(postupleniye)
 
 
 def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefundQueueDB):
@@ -247,16 +258,16 @@ def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefu
         supplier=f'Просейл {prom_cpa_refund.shop}',
         products=[ProductCommissionProSale(price=prom_cpa_refund.cpa_commission)],
     )
-    add_order_to_db(return_tovarov)
-    create_json_file(return_tovarov)
+    if add_order_to_db(return_tovarov):
+        create_json_file(return_tovarov)
 
 
 @logger.catch
 def main():
     # crm_orders = crm.get_orders(last_orders_amount=constants.KEY_MAX_PROCESSING_ORDERS)
     # crm_orders = get_active_orders() + get_completed_orders()
-    # crm_orders = get_last_created_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)
-    crm_orders = get_last_modified_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)    # TODO change back
+    crm_orders = get_last_created_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)  #? TODO comment this line for production
+    # crm_orders = get_last_modified_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)    #! TODO return to this
     print(f'Got {len(crm_orders)} orders')
     if len(crm_orders) > constants.KEY_MAX_PROCESSING_ORDERS:
         logger.error('Too many orders (more than {constants.KEY_MAX_PROCESSING_ORDERS}) to process in CRM')
@@ -284,7 +295,7 @@ def process_orders(crm_orders: list[dict]):
                     for product in find_childs_products(order_dict, crm_orders):
                         order.products.append(product)  # adding child products to order
                     process_new_buyer_order(order)
-                    make_supplier_comission_orders(order)   # TODO move to if block
+                make_supplier_comission_orders(order)   #! TODO move to if block for production
 
             if order.supplier:   # Supplier present, this is a Supplier order or also a Supplier order
                 order = Order1CSupplier(**order_dict)
@@ -317,4 +328,4 @@ if __name__ == '__main__':
             logger.info(f'SHUTTING DOWN {__file__}')
             exit(0)
         print(f'Sleeping {constants.time_to_sleep_crm_1c} sec\n')
-        time.sleep(constants.time_to_sleep_crm_1c)
+        time.sleep(3600) # (constants.time_to_sleep_crm_1c) #! TODO comment this line for production
