@@ -29,7 +29,7 @@ send_ttn_text = ('Ми відправили Ваше замовлення, ТТ�
 
 
 def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
-    r"""Sends SMS.
+    """Sends SMS.
     :param phone: Phone at +38.... format.
     :param tracking_code: tracking_code
     :param shop_sql_id: Shop id in terms of 1C SQL db
@@ -43,7 +43,7 @@ def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
 
 
 def send_sms(phone: str, alpha_name: str, text: str):
-    r"""Sends SMS.
+    """Sends SMS.
 
     :param phone: Phone at +38.... format.
     :param alpha_name: alpha_name

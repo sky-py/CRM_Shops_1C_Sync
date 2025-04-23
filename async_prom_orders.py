@@ -1,27 +1,35 @@
 import asyncio
-import random
 import platform
-import colorama
+import random
 from datetime import datetime, timedelta
+from pathlib import Path
+import colorama
 import constants
 from api.prom_api_async import PromClient
 from db.db_init_async import Session_async, create_tables
-from db.models import PromOrderDB, PromCPARefundQueueDB
+from db.models import PromCPARefundQueueDB, PromOrderDB
+from loguru import logger
+from messengers import send_service_tg_message, send_tg_message
 from parse.parse_constants import PromStatus
 from parse.parse_prom_order import OrderProm
-from loguru import logger
-from messengers import send_tg_message, send_service_tg_message
-from sqlalchemy.future import select
-from pathlib import Path
 from retry import retry
+from sqlalchemy.future import select
 
 colorama.init()
 bad_orders = []
 reload_file = Path(__file__).with_suffix('.reload')
-logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-           level='INFO', backtrace=True, diagnose=True)
-logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-           level='ERROR')
+logger.add(
+    sink=f'log/{Path(__file__).stem}.log',
+    format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+    level='INFO',
+    backtrace=True,
+    diagnose=True,
+)
+logger.add(
+    sink=lambda msg: send_service_tg_message(msg),
+    format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+    level='ERROR',
+)
 
 
 def send_message(order):
@@ -39,72 +47,71 @@ def generate_message_text(order: OrderProm):
         case _:
             state = 'Принят'
 
-    send_text = (f'{state} заказ {order.order_id} на {order.shop}\n'   
-                 f'Сумма: {order.total_price} грн.\n'
-                 f'Клиент: {order.buyer.full_name} \n'
-                 f'Телефон: {order.buyer.phone}')
+    send_text = (
+        f'{state} заказ {order.order_id} на {order.shop}\n'
+        f'Сумма: {order.total_price} грн.\n'
+        f'Клиент: {order.buyer.full_name} \n'
+        f'Телефон: {order.buyer.phone}'
+    )
     return send_text
 
 
 async def add_order_to_db(order: OrderProm, session: Session_async):
-    session.add(PromOrderDB(
-        order_id=order.order_id,
-        status=order.status,
-        shop=order.shop,
-        is_accepted=False if order.status == PromStatus.NEW or order.status == PromStatus.PAID else True,
-        cpa_commission=order.cpa_commission,
-        cpa_is_refunded=order.cpa_is_refunded,
-        ordered_at=order.date_created
-    ))
+    session.add(
+        PromOrderDB(
+            order_id=order.order_id,
+            status=order.status,
+            shop=order.shop,
+            is_accepted=False if order.status == PromStatus.NEW or order.status == PromStatus.PAID else True,
+            cpa_commission=order.cpa_commission,
+            delivery_commission=order.delivery_commision,
+            cpa_is_refunded=order.cpa_is_refunded,
+            ordered_at=order.date_created,
+        )
+    )
+    logger.info(f'Added {order.shop}:{order.order_id} to db. Order = {order}')
 
 
 async def add_order_to_cpa_queue(order: OrderProm, session: Session_async):
-    session.add(PromCPARefundQueueDB(
-        order_id=order.order_id,
-        shop=order.shop,
-        cpa_commission=order.cpa_commission,
-    ))
+    session.add(PromCPARefundQueueDB(order_id=order.order_id, shop=order.shop, cpa_commission=order.cpa_commission))
+    logger.info(f'Added {order.shop}:{order.order_id} with CPA commission {order.cpa_commission} to cpa refund queue')
 
 
 def get_color(shop: dict) -> str:
     i = constants.prom_shops.index(shop)
-    return f'\033[{31+i%6}m'
-
-
-def get_timestamp(minutes_ago: int):
-    past_time = datetime.now() - timedelta(minutes=minutes_ago)
-    return past_time.strftime("%Y-%m-%dT%H:%M:%S")
+    return f'\033[{31 + i % 6}m'
 
 
 def order_date_is_valid(date: str) -> bool:
-    return datetime.fromisoformat(date).replace(tzinfo=None) > datetime.now() - timedelta(days=90)
+    return datetime.fromisoformat(date).replace(tzinfo=None) > (datetime.now() -
+            timedelta(days=constants.PROM_DAYS_TO_CONSIDER_ORDER_FINISHED))
 
 
 @retry(stop_after_delay=constants.prom_stop_tries_after_delay)
 async def get_orders(shop_client: PromClient) -> list | None:
-    from_date = get_timestamp(minutes_ago=constants.PROM_TIME_INTERVAL_TO_CHECK)
-    r = await shop_client.get_orders(last_modified_from=from_date, limit=1000)
-    # r = await shop_client.get_orders(date_from='2024-05-01T00:00:00', limit=1000)
-    r.raise_for_status()
-    orders = r.json()['orders']
-    return [order for order in orders if order_date_is_valid(order['date_created'])]
+    # from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK)  # TODO return to this
+    # orders = await shop_client.get_orders(last_modified_from=from_date, limit=1000)  # TODO return to this
+    orders = await shop_client.get_orders(date_from=datetime(year=2024, month=5, day=1), date_to=datetime.now(), limit=1000)  # TODO comment this line for production
+    return orders
+    # return [order for order in orders if order_date_is_valid(order['date_created'])]  # TODO return to this
 
 
-@logger.catch   # TODO inform worker does not run
+@logger.catch  # TODO inform worker does not run
 async def worker(shop: dict):
     shop_client = PromClient(shop['token'])
     color = get_color(shop)
     shop_name = shop['name']
-    print(color + f"START PROM {shop_name} ")
+    print(color + f'START PROM {shop_name} ')
     await asyncio.sleep(random.randint(0, constants.prom_sleep_time))
     while True:
         orders = await get_orders(shop_client)
+        print(len(orders))
         await process_orders(orders, shop_name, color)
-        print(color + f"PROM {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds")
+        print(color + f'PROM {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds')
         if reload_file.exists():
             logger.info(f'STOPPING {shop_name} thread')
             return
-        await asyncio.sleep(constants.prom_sleep_time)
+        await asyncio.sleep(3600) # (constants.prom_sleep_time)  # TODO return to this
 
 
 async def process_orders(orders: list, shop_name: str, color: str):
@@ -115,12 +122,10 @@ async def process_orders(orders: list, shop_name: str, color: str):
                     order = OrderProm(**order_dict)
                     order.shop = shop_name
                     await process_one_order(order, session, color)
-                except:
+                except Exception as e:
                     if order_dict['id'] not in bad_orders:
-                        logger.error(f'Problem with {shop_name} - order: {order_dict['id']}')
+                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]}')
                         bad_orders.append(order_dict['id'])
-                    else:
-                        pass
 
 
 async def process_one_order(order: OrderProm, session: Session_async, color: str):
@@ -139,6 +144,10 @@ async def process_one_order(order: OrderProm, session: Session_async, color: str
         if order.cpa_is_refunded and not order_db.cpa_is_refunded:
             order_db.cpa_is_refunded = True
             await add_order_to_cpa_queue(order, session)
+
+        if order.delivery_commision != order_db.delivery_commission:
+            order_db.delivery_commission = order.delivery_commision
+            logger.info(f'Updated delivery commission for {order.shop}:{order.order_id} to {order.delivery_commision}')
 
 
 async def process_new_order(order: OrderProm, session: Session_async):

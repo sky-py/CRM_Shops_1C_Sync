@@ -1,8 +1,17 @@
 from typing import Optional
-from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
-from parse.parse_constants import *
-from parse.process_xml import get_name_and_category_by_sku
 from common_funcs import international_phone
+from parse.parse_constants import (
+    Document1C,
+    Status,
+    manager_key_to_1c,
+    manager_key_to_db,
+    payment_crm_id_to_1c,
+    shop_crm_id_to_sql_shop_id,
+    shop_key_to_1c,
+    status_key_group_to_db,
+)
+from parse.process_xml import get_name_and_category_by_sku
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class OrderKeyCrmShort(BaseModel):
@@ -12,9 +21,11 @@ class OrderKeyCrmShort(BaseModel):
     manager_id: Optional[int] = None
     status: Status = Field(alias='status_group_id')
 
+    model_config = ConfigDict(populate_by_name=True)
+
     @model_validator(mode='before')
     def get_nested(cls, model):
-        model = {k: v for k, v in model['context'].items()}
+        model = dict(model['context'].items())
         model['status_group_id'] = status_key_group_to_db.get(model['status_group_id'])
         model['manager_id'] = manager_key_to_db.get(model['manager_id'])
         return model
@@ -28,9 +39,7 @@ class ProductBuyer(BaseModel):
     # purchased_price: float = Field(default=0, exclude=True)
     quantity: float
 
-    model_config = ConfigDict(
-        str_strip_whitespace=True
-    )
+    model_config = ConfigDict(str_strip_whitespace=True, populate_by_name=True)
 
     @field_validator('quantity')
     def convert(cls, value: str):
@@ -44,9 +53,23 @@ class ProductBuyer(BaseModel):
 class ProductSupplier(ProductBuyer):
     price: float = Field(default=0, alias='purchased_price')
 
+    model_config = ConfigDict(populate_by_name=True)
+
     @field_validator('price')
     def round_low(cls, value):
         return value
+
+
+class ProductCommissionProSale(ProductSupplier):
+    sku: str = Field(default='Commission_Prosale')
+    name: str = Field(default='Комиссия просейл')
+    quantity: float = Field(default=1.0)
+
+
+class ProductCommissionProSaleFreeDelivery(ProductSupplier):
+    sku: str = Field(default='Commission_Prosale_free_delivery')
+    name: str = Field(default='Комиссия просейл доставка')
+    quantity: float = Field(default=1.0)
 
 
 class Buyer(BaseModel):
@@ -75,8 +98,8 @@ class Order1CBuyer(BaseModel):
     action: str = Field(default='create_buyer_order')
     document_type: Document1C = Field(default=Document1C.CLIENT_ORDER, exclude=True)
     proveden: bool = Field(default=False)
-    key_crm_id: int = Field(alias='id')
-    parent_id: Optional[int] = None
+    key_crm_id: str = Field(alias='id')
+    parent_id: Optional[str] = None
     shop: Optional[str] = None  # shop name by 1C
     source_uuid: Optional[int] = Field(default=None, exclude=True)  # order id by back office
     manager: Optional[str] = None
@@ -92,14 +115,15 @@ class Order1CBuyer(BaseModel):
     shop_sql_id: Optional[int] = Field(default=None, exclude=True)  # shop id at SQL DB
     push_to_1C: bool = Field(default=False, exclude=True)
 
-    model_config = {
-        'debug': True,
-    }
+    model_config = ConfigDict(populate_by_name=True)
 
     @model_validator(mode='before')
     def get_nested(cls, model):
+        model['id'] = str(model['id'])
+        if model['parent_id']:
+            model['parent_id'] = str(model['parent_id'])
+            
         model['shop'] = shop_key_to_1c.get(model['source_id'])
-
         model['shop_sql_id'] = shop_crm_id_to_sql_shop_id.get(model['source_id'], 1)
 
         if model['buyer']:
@@ -115,8 +139,9 @@ class Order1CBuyer(BaseModel):
         if model['total_discount']:
             prices = [product['price_sold'] for product in model['products']]
             index = prices.index(max(prices))
-            model['products'][index]['price_sold'] = \
-                model['products'][index]['price_sold'] - round(model['total_discount'] / float(model['products'][index]['quantity']), 2)
+            model['products'][index]['price_sold'] = model['products'][index]['price_sold'] - round(
+                model['total_discount'] / float(model['products'][index]['quantity']), 2
+            )
 
         for product in model['products']:
             if product['sku']:
@@ -170,12 +195,10 @@ class Order1CSupplierPromCommissionOrder(BaseModel):
     action: str = Field(default='create_supplier_order')
     document_type: Document1C = Field(default=Document1C.SUPPLIER_ORDER, exclude=True)
     proveden: bool = Field(default=True)
-    key_crm_id: int
-    parent_id: int
+    key_crm_id: str
+    parent_id: str
     shop: Optional[str] = None
-    products: list[ProductSupplier] = Field(default_factory=lambda: [ProductSupplier(sku='Commission_Prosale',
-                                                                     name='Комиссия просейл',
-                                                                     quantity=1.0)])
+    products: list[ProductSupplier]
     manager: str = Field(default='Финансист')
     manager_comment: Optional[str] = None
     tracking_code: Optional[str] = None
@@ -191,4 +214,3 @@ class Order1CPostupleniye(Order1CSupplierPromCommissionOrder):
 class Order1CReturnTovarov(Order1CSupplierPromCommissionOrder):
     action: str = Field(default='create_return_tovarov')
     document_type: Document1C = Field(default=Document1C.RETURN_TOVAROV, exclude=True)
-
