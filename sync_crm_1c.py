@@ -207,14 +207,15 @@ def process_new_supplier_order(order: Order1CSupplier | Order1CSupplierPromCommi
 
 
 def process_existing_supplier_order(order: Order1CSupplierUpdate, db_order: Order1CDB):
+    updated = False
     if order.tracking_code and order.tracking_code != db_order.tracking_code:  # order tracking code is new or changed
         add_to_track_and_sms(order=order, old_ttn_number=db_order.tracking_code)
-        order.supplier_id = None
         db_order.tracking_code = order.tracking_code
-        create_json_file(order, include_keys={'action', 'key_crm_id', 'tracking_code', 'supplier_id'})
-    elif order.supplier_id and not db_order.supplier_id:  # but valid supplier number is not in db
-        order.tracking_code = None
+        updated = True
+    if order.supplier_id != db_order.supplier_id:
         db_order.supplier_id = order.supplier_id
+        updated = True
+    if updated:
         create_json_file(order, include_keys={'action', 'key_crm_id', 'tracking_code', 'supplier_id'})
 
 
