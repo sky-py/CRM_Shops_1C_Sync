@@ -1,28 +1,20 @@
-import json
+import time
+
 import requests
-from enum import Enum
+from enum import StrEnum
 
 REQUEST_TIMEOUT = 20
 results_per_page = 50
 include_order_fields = 'buyer,manager,products.offer,shipping.deliveryService,custom_fields,payments'
-main_url = 'https://openapi.keycrm.app/v1'
-
-headers = {
-    'Content-type': 'application/json',
-    'Accept': 'application/json',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Authorization': f'Bearer + key'
-}
 
 
-class Method(Enum):
+class Method(StrEnum):
     GET = 'get'
     POST = 'post'
     PUT = 'put'
 
 
-class Route(Enum):
+class Route(StrEnum):
     ORDER = '/order'
     STAGE = '/order/status'
     PAYMENT_METHODS = '/order/payment-method'
@@ -30,28 +22,40 @@ class Route(Enum):
 
 
 class KeyCRM:
+    main_url = 'https://openapi.keycrm.app/v1'
     def __init__(self, api_key):
-        self.headers = headers
-        self.headers['Authorization'] = f'Bearer {api_key}'
+        self.headers = {'Content-type': 'application/json',
+                        'Accept': 'application/json',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                        'Authorization': f'Bearer {api_key}'
+                        }
 
-    def raw_request(self, url):
-        r = requests.get(url=url, headers=headers, timeout=REQUEST_TIMEOUT)
-        return r
-
-    def make_request(self, method: Method, route: str, params=None, data=None) -> dict:
-        if params is None:
-            params = {}
-        if data is None:
-            data = {}
-        url = main_url + route
-        match method:
-            case Method.GET: r = requests.get(url=url, headers=headers, params=params, timeout=REQUEST_TIMEOUT)
-            case Method.PUT: r = requests.put(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.POST: r = requests.post(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-        print('Remaining limit:', r.headers.get('X-Ratelimit-Remaining'))
+    def parce_validate_response(self, r: requests.Response) -> dict:
+        r.raise_for_status()
+        remaining_limit = r.headers.get('X-Ratelimit-Remaining')
+        print('Remaining limit:', remaining_limit)
+        if remaining_limit:
+            if int(remaining_limit) < 10:
+                print('Too many requests, sleeping for 10 seconds')
+                time.sleep(10)
         return r.json()
 
-    def get_orders(self, last_orders_amount=results_per_page, filter: dict = None) -> list:
+    def make_request(self, method: Method, route: str, params=None, json_data=None) -> dict:
+        url = self.main_url + route
+        match method:
+            case Method.GET:
+                r = requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
+            case Method.PUT:
+                r = requests.put(url=url, headers=self.headers, json=json_data, timeout=REQUEST_TIMEOUT)
+            case Method.POST:
+                r = requests.post(url=url, headers=self.headers, json=json_data, timeout=REQUEST_TIMEOUT)
+            case _:
+                raise Exception('Unknown method')
+
+        return self.parce_validate_response(r)
+
+    def get_orders(self, last_orders_amount=results_per_page, filter: dict = None) -> list[dict]:
         """
         Returns list of orders dicts
         :param last_orders_amount: 0 meens ALL
@@ -66,37 +70,40 @@ class KeyCRM:
             for key, value in filter.items():
                 params[f'filter[{key}]'] = value
 
-        r = self.make_request(Method.GET, Route.ORDER.value, params=params)
+        data = self.make_request(Method.GET, Route.ORDER, params=params)
 
         if last_orders_amount == 0:
-            pages = r['last_page']
+            pages = data['last_page']
         else:
             pages = last_orders_amount // results_per_page + (last_orders_amount % results_per_page > 0)
 
-        orders = r['data']
+        orders = data['data']
         if pages == 1:  # all orders on one page, no need to fetch more pages
             return orders
         else:
             for page in range(2, pages + 1):
                 params['page'] = page
-                r = self.make_request(Method.GET, Route.ORDER.value, params=params)
-                orders += r['data']
+                data = self.make_request(Method.GET, Route.ORDER, params=params)
+                orders += data['data']
             return orders
 
-    def get_one_order(self, order_id: int | str):
-        return self.make_request(Method.GET, Route.ORDER.value + f'/{order_id}', params={'include': include_order_fields})
+    def get_one_order(self, order_id: int | str) -> dict:
+        return self.make_request(Method.GET, f'{Route.ORDER}/{order_id}', params={'include': include_order_fields})
 
-    def new_order(self, data) -> dict:
-        return self.make_request(Method.POST, Route.ORDER.value, data=json.dumps(data))
+    def new_order(self, data: dict) -> dict:
+        return self.make_request(Method.POST, Route.ORDER, json_data=data)
 
-    def get_stages(self):
-        return self.make_request(Method.GET, Route.STAGE.value, params={'limit': results_per_page})
+    def update_order(self, order_id: int | str, data: dict) -> dict:
+        return self.make_request(Method.PUT, f'{Route.ORDER}/{order_id}', json_data=data)
 
-    def get_pay_methods(self):
-        return self.make_request(Method.GET, Route.PAYMENT_METHODS.value, params={'limit': results_per_page})
+    def get_stages(self) -> dict:
+        return self.make_request(Method.GET, Route.STAGE, params={'limit': results_per_page})
 
-    def get_offers(self):
-        return self.make_request(Method.GET, Route.OFFERS.value, params={'limit': results_per_page,
+    def get_pay_methods(self) -> dict:
+        return self.make_request(Method.GET, Route.PAYMENT_METHODS, params={'limit': results_per_page})
+
+    def get_offers(self) -> dict:
+        return self.make_request(Method.GET, Route.OFFERS, params={'limit': results_per_page,
                                                                          'include': 'product'})
 
     def get_order_by_source_uuid(self, source_uuid: str) -> dict:

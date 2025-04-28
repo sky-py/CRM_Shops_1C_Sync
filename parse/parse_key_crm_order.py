@@ -9,9 +9,11 @@ from parse.parse_constants import (
     shop_crm_id_to_sql_shop_id,
     shop_key_to_1c,
     status_key_group_to_db,
+    paid_by_card_methods
 )
 from parse.process_xml import get_name_and_category_by_sku
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from tools.round import classic_round
 
 
 class OrderKeyCrmShort(BaseModel):
@@ -36,7 +38,6 @@ class ProductBuyer(BaseModel):
     name: str
     category: Optional[int] = Field(default=None)
     price: float = Field(default=0, alias='price_sold')
-    # purchased_price: float = Field(default=0, exclude=True)
     quantity: float
 
     model_config = ConfigDict(str_strip_whitespace=True, populate_by_name=True)
@@ -45,19 +46,11 @@ class ProductBuyer(BaseModel):
     def convert(cls, value: str):
         return int(value)
 
-    @field_validator('price')
-    def round_low(cls, value):
-        return value // 1
-
 
 class ProductSupplier(ProductBuyer):
     price: float = Field(default=0, alias='purchased_price')
 
     model_config = ConfigDict(populate_by_name=True)
-
-    @field_validator('price')
-    def round_low(cls, value):
-        return value
 
 
 class ProductCommissionProSale(ProductSupplier):
@@ -110,6 +103,7 @@ class Order1CBuyer(BaseModel):
     supplier: Optional[str] = Field(default=None, exclude=True)
     shipping: Shipping
     payment: Optional[str] = None
+    prices_rounded: bool = Field(default=False, exclude=True)
 
     shop_id: Optional[int] = Field(default=None, alias='source_id', exclude=True)  # shop id at CRM
     shop_sql_id: Optional[int] = Field(default=None, exclude=True)  # shop id at SQL DB
@@ -122,7 +116,7 @@ class Order1CBuyer(BaseModel):
         model['id'] = str(model['id'])
         if model['parent_id']:
             model['parent_id'] = str(model['parent_id'])
-            
+
         model['shop'] = shop_key_to_1c.get(model['source_id'])
         model['shop_sql_id'] = shop_crm_id_to_sql_shop_id.get(model['source_id'], 1)
 
@@ -139,9 +133,9 @@ class Order1CBuyer(BaseModel):
         if model['total_discount']:
             prices = [product['price_sold'] for product in model['products']]
             index = prices.index(max(prices))
-            model['products'][index]['price_sold'] = model['products'][index]['price_sold'] - round(
-                model['total_discount'] / float(model['products'][index]['quantity']), 2
-            )
+            one_product_price = (model['products'][index]['price_sold'] -
+                                 model['total_discount'] / float(model['products'][index]['quantity']))
+            model['products'][index]['price_sold'] = classic_round(one_product_price, 2)
 
         for product in model['products']:
             if product['sku']:
@@ -160,8 +154,20 @@ class Order1CBuyer(BaseModel):
             if custom_field['name'] == 'Заказ 1С':
                 model['push_to_1C'] = custom_field['value']
 
+        paid_by_card = False
+        for payment in model.get('payments', []):
+            payment_name = payment_crm_id_to_1c.get(payment['payment_method_id'])
+            if payment['status'] == 'paid' and payment_name in paid_by_card_methods:
+                paid_by_card = True
+
+        if not paid_by_card:
+            for product in model['products']:
+                if (product['price_sold'] * float(product['quantity'])) % 1 != 0:
+                    product['price_sold'] = classic_round(product['price_sold'])
+                    model['prices_rounded'] = True
+
         if model['payments']:
-            model['payment'] = payment_crm_id_to_1c.get(model['payments'][0]['payment_method_id'], None)
+            model['payment'] = payment_crm_id_to_1c.get(model['payments'][0]['payment_method_id'], None) # 1st payment name
 
         return model
 

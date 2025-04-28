@@ -11,13 +11,11 @@ load_dotenv('/etc/env/ai.env')
 IS_PRODUCTION_SERVER = True if os.getenv('IS_PRODUCTION_SERVER') == 'True' else False
 
 KEY_CRM_API_KEY = os.getenv('KEY_CRM_API_KEY')
-KEY_GET_LAST_ACTIVE_ORDERS = 200
+KEY_GET_LAST_ORDERS = 200
 KEY_MAX_PROCESSING_ORDERS = 1000
 KEY_TIME_INTERVAL_TO_CHECK = 120  # minutes
 KEY_TIME_SHIFT = 180  # time difference between CRM time and local in minutes
-KEY_ACTIVE_STAGES = [1, 2, 3, 6, 20, 21, 23, 30, 32, 33]  # for speed, but better get these stages from API
 order_completed_stage_id = 12
-# KEY_GET_LAST_ORDERS = 400
 
 UKRSALON_URL = os.getenv('UKRSALON_URL')
 

@@ -1,10 +1,12 @@
 import json
 import time
+import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import constants
 from api.key_crm_api import KeyCRM
+from constants import IS_PRODUCTION_SERVER
 from db.db_init import Session
 from db.models import Order1CDB, PromCPARefundQueueDB, PromOrderDB
 from db.sql_init import add_ttn_to_db
@@ -31,18 +33,10 @@ reload_file = Path(__file__).with_suffix('.reload')
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
 
-logger.add(
-    sink=f'log/{Path(__file__).stem}.log',
-    format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-    level='INFO',
-    backtrace=True,
-    diagnose=True,
-)
-logger.add(
-    sink=lambda msg: send_service_tg_message(msg),
-    format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-    level='ERROR',
-)
+logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
+           level='INFO', backtrace=True, diagnose=True)
+logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
+           level='ERROR')
 
 
 def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[ProductBuyer]:
@@ -58,6 +52,9 @@ def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[Produc
 
 
 def normalize_fio(fio: str) -> str:
+    if not IS_PRODUCTION_SERVER:
+        return fio
+
     try:
         new_fio = ai_reorder_names(fio)
     except Exception as e:
@@ -75,22 +72,19 @@ def normalize_fio(fio: str) -> str:
             return fio
 
 
-def create_json_file(
-    order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye, include_keys=None, exclude_keys=None
-):
-    if type(order) is Order1CBuyer and constants.IS_PRODUCTION_SERVER:
+def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye,
+                     include_keys=None, exclude_keys=None):
+    if type(order) is Order1CBuyer:
         order.buyer.full_name = normalize_fio(order.buyer.full_name)
-    order_dict = order.model_dump(mode='json', include=include_keys, exclude=exclude_keys)
-    # order_dict = transform_order_dict_for_1c(order_dict)
-    text = json.dumps(order_dict, ensure_ascii=False, indent=4)
+    text = json.dumps(order.model_dump(mode='json', include=include_keys, exclude=exclude_keys),
+                      ensure_ascii=False, indent=4)
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
     (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
-    (Path(constants.json_archive_1C_path) / json_file).write_text(data=text, encoding='utf-8')
+    shutil.copyfile((Path(constants.json_orders_for_1c_path) / json_file), (Path(constants.json_archive_1C_path) / json_file))
     if type(order) is not Order1CSupplierUpdate:
-        logger.info(f'Created JSON file for {order}')
+        logger.info(f'Created JSON file for {order.document_type.value}, key_crm_id = {order.key_crm_id}')
     else:
-        add_text = f'TTN to {order.tracking_code}' if order.tracking_code else f'Supplier_id to {order.supplier_id}'
-        logger.info(f'Created JSON file for order {order} and Updated {add_text} for Supplier order')
+        logger.info(f'Created JSON Update file for Supplier order key_crm_id = {order.key_crm_id}')
 
 
 def add_to_track_and_sms(order: Order1CSupplier, old_ttn_number: Optional[str] = None):
@@ -116,10 +110,13 @@ def make_time_interval(minutes: int) -> str:
 
 @retry(stop_after_delay=120)
 def get_active_orders() -> list:
+    """
+    Returns list of all active orders from CRM.
+    Active orders are orders that are not in closing stages.
+    """
     orders = []
     r = crm.get_stages()['data']
     active_stages = [stage_dict['id'] for stage_dict in r if not stage_dict['is_closing_order']]
-    # for stage in constants.KEY_ACTIVE_STAGES:
     for stage in active_stages:
         stage_orders = crm.get_orders(last_orders_amount=0, filter={'status_id': stage})
         print(f'{len(stage_orders)} orders for stage {stage}\n')
@@ -129,11 +126,14 @@ def get_active_orders() -> list:
 
 @retry(stop_after_delay=120)
 def get_completed_orders() -> list:
+    """
+    Returns list of all completed orders from CRM.
+    Completed orders are orders that have reached the completed stage.
+    """
     orders = crm.get_orders(
-        last_orders_amount=constants.KEY_GET_LAST_ACTIVE_ORDERS,
+        last_orders_amount=constants.KEY_GET_LAST_ORDERS,
         filter={'status_id': constants.order_completed_stage_id},
     )
-    print(f'{len(orders)} orders for Completed stage {constants.order_completed_stage_id}\n')
     return orders
 
 
@@ -188,7 +188,6 @@ def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromC
             )
         logger.info(f'Added Order {order} to db')
         return True
-        
 
 
 def process_new_buyer_order(order: Order1CBuyer):
@@ -268,6 +267,17 @@ def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefu
         create_json_file(return_tovarov)
 
 
+def update_crm_order(order: Order1CBuyer):
+    if not IS_PRODUCTION_SERVER:
+        return
+    data = {'products': [product.model_dump(include={'sku', 'price'}) for product in order.products],
+            'discount_amount': 0}
+    try:
+        crm.update_order(order_id=order.key_crm_id, data=data)
+    except:
+        logger.error(f'Error updating crm order {order.key_crm_id}')
+
+
 @logger.catch
 def main():
     crm_orders = get_last_modified_orders(constants.KEY_TIME_INTERVAL_TO_CHECK)
@@ -288,7 +298,7 @@ def process_orders(crm_orders: list[dict]):
                 order = Order1CBuyer(**order_dict)
             except Exception as e:
                 if order_dict['id'] not in bad_orders:
-                    logger.error(f'Error {e} parsing order: {order_dict["id"]}')
+                    logger.error(f'Error {e} parsing order: {order_dict['id']}')
                     bad_orders.append(order_dict['id'])
                 continue
 
@@ -298,6 +308,8 @@ def process_orders(crm_orders: list[dict]):
             if not order.parent_id:  # it is Buyer order and POSSIBLY Supplier order
                 db_order = session.query(Order1CDB).filter_by(key_crm_id=order.key_crm_id, parent_id=None).first()
                 if db_order is None:  # if order doesn't exist in db
+                    # if order.prices_rounded: # uncomment when CRM fixes update
+                    #     update_crm_order(order)
                     for product in find_childs_products(order_dict, crm_orders):
                         order.products.append(product)  # adding child products to order
                     process_new_buyer_order(order)

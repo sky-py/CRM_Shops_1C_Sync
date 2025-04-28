@@ -205,6 +205,8 @@ payment_crm_id_to_1c = {
     36: 'WayForPay',
 }
 
+paid_by_card_methods = ['Промоплата', 'Ликпей']
+
 
 def get_key_by_value(mdict: dict, val):
     for key, value in mdict.items():
