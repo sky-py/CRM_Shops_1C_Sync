@@ -162,8 +162,12 @@ class Order1CBuyer(BaseModel):
 
         if not paid_by_card:
             for product in model['products']:
-                if (product['price_sold'] * float(product['quantity'])) % 1 != 0:
-                    product['price_sold'] = classic_round(product['price_sold'])
+                quantity = float(product['quantity'])
+                if (product['price_sold'] * quantity) % 1 != 0:
+                    if quantity % 2 != 0:
+                        product['price_sold'] = classic_round(product['price_sold'])
+                    else:
+                        product['price_sold'] = classic_round(product['price_sold'] * quantity) / quantity
                     model['prices_rounded'] = True
 
         if model['payments']:
