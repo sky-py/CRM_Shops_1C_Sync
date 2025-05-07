@@ -1,3 +1,4 @@
+import copy
 import json
 import time
 import shutil
@@ -199,10 +200,17 @@ def process_new_supplier_order(order: Order1CSupplier | Order1CSupplierPromCommi
     if order.parent_id is None:
         order.parent_id = order.key_crm_id
     if add_order_to_db(order):
-        create_json_file(order, exclude_keys={'buyer', 'shipping', 'payment'})
+        order_copy = order.model_copy(deep=True)
+        order_copy.tracking_code = None
+        order_copy.supplier_id = None
+        create_json_file(order_copy, exclude_keys={'buyer', 'shipping', 'payment'})
 
-    if order.tracking_code:
-        add_to_track_and_sms(order=order)
+    if order.tracking_code or order.supplier_id:
+        order_update = order.model_copy(deep=True)
+        order_update.action = 'update_supplier_order'
+        create_json_file(order_update, include_keys={'action', 'key_crm_id', 'tracking_code', 'supplier_id'})
+        if order.tracking_code:
+            add_to_track_and_sms(order=order)
 
 
 def process_existing_supplier_order(order: Order1CSupplierUpdate, db_order: Order1CDB):
