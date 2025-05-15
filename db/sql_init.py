@@ -43,13 +43,13 @@ def stop_track_ttn(ttn_number: Optional[str]) -> None:
 
 def add_ttn_to_db(ttn_number: str, shop_sql_id: int, fio: str, phone: str, manager: str, old_ttn_number: Optional[str] = None) -> bool:
     stop_track_ttn(old_ttn_number)
+    if ttn_number == TTN_SENT_BY_CAR:
+        return True
     if get_record_by_ttn(ttn_number) is not None:
         print(f'TTN {ttn_number} already exists in the database')
         return False
     phone = international_phone(phone).removeprefix('+38') if phone else phone
-    finished = 1 if ttn_number == TTN_SENT_BY_CAR else 0
     write_record_to_db(TTN(ttn_number=ttn_number,
-                           finished=finished,
                            shop=shop_sql_id,
                            fio=fio,
                            phone=phone,
