@@ -9,7 +9,8 @@ from parse.parse_constants import (
     shop_crm_id_to_sql_shop_id,
     shop_key_to_1c,
     status_key_group_to_db,
-    paid_by_card_methods
+    paid_by_card_methods,
+    TTN_SENT_BY_CAR
 )
 from parse.process_xml import get_name_and_category_by_sku
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -186,6 +187,11 @@ class Order1CSupplier(Order1CBuyer):
 
     @model_validator(mode='before')
     def get_nested_2(cls, model):
+        for custom_field in model['custom_fields']:
+            if custom_field['name'] == 'Відправлено машиною':
+                if custom_field['value']:
+                    model['shipping']['tracking_code'] = TTN_SENT_BY_CAR
+
         model['tracking_code'] = model['shipping']['tracking_code']
         return model
 

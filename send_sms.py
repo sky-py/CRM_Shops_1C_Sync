@@ -2,6 +2,7 @@ import requests
 from loguru import logger
 import os
 from dotenv import load_dotenv
+from parse.parse_constants import TTN_SENT_BY_CAR
 
 
 load_dotenv('/etc/env/sms.env')
@@ -20,13 +21,14 @@ alpha_names = [
     os.getenv('alpha_krasunia'),
    ]
 
-send_ttn_text = ('Ми відправили Ваше замовлення, ТТН {tracking_code} '
-                 'Відстежити: https://t.me/SalonSenderbot?start={tracking_code}s={shop_number} '
+ttn_text_template = ('Ми відправили Ваше замовлення{by_service} '
                  'Обов"язково перевіряйте відсутність механічних пошкоджень і комплектацію, наявність всіх одиниць '
                  'товару при отриманні замовлення в присутності співробітника служби доставки. Ми не гарантуємо '
                  'вирішення спірних ситуацій з товаром на Вашу користь, якщо товар не було перевірено під час отримання'
                  )
 
+by_car_text_template = ' машиною.'
+by_post_text_template = ', ТТН {tracking_code} Відстежити: https://t.me/SalonSenderbot?start={tracking_code}s={shop_number}'
 
 def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
     """Sends SMS.
@@ -38,7 +40,9 @@ def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
     """
 
     alpha = alpha_names[shop_sql_id]
-    text = send_ttn_text.format(tracking_code=tracking_code, shop_number=shop_sql_id)
+    service_text = (by_car_text_template if tracking_code == TTN_SENT_BY_CAR else
+                    by_post_text_template.format(tracking_code=tracking_code, shop_number=shop_sql_id))
+    text = ttn_text_template.format(by_service=service_text)
     return send_sms(phone=phone, alpha_name=alpha, text=text)
 
 

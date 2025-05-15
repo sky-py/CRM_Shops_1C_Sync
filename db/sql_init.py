@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
+from parse.parse_constants import TTN_SENT_BY_CAR
 
 load_dotenv('/etc/env/db.env')
 
@@ -46,7 +47,9 @@ def add_ttn_to_db(ttn_number: str, shop_sql_id: int, fio: str, phone: str, manag
         print(f'TTN {ttn_number} already exists in the database')
         return False
     phone = international_phone(phone).removeprefix('+38') if phone else phone
+    finished = 1 if ttn_number == TTN_SENT_BY_CAR else 0
     write_record_to_db(TTN(ttn_number=ttn_number,
+                           finished=finished,
                            shop=shop_sql_id,
                            fio=fio,
                            phone=phone,

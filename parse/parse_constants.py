@@ -3,6 +3,7 @@ from enum import Enum
 ukrsalon_crm_id = 10  # Ідентифікатор джерела Укрсалон
 insta_ukrsalon_crm_id = 5  # Ідентифікатор джерела Инстаграм Укрсалон
 sku_to_name_xml_file = 'c:/Quad Solutions/files/1_ main/ukrstil_ua.xml'
+TTN_SENT_BY_CAR = '00000000000000'
 
 
 class Status(Enum):
