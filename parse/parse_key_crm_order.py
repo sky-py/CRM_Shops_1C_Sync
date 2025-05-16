@@ -147,13 +147,19 @@ class Order1CBuyer(BaseModel):
                     product['name'] = product['name'].capitalize()
                 product['category'] = category
 
+        model['tracking_code'] = model['shipping']['tracking_code']
+
         for custom_field in model['custom_fields']:
-            if custom_field['name'] == 'Постачальник':
-                model['supplier'] = custom_field['value'][0]
-            if custom_field['name'] == 'Номер постачальника':
-                model['supplier_id'] = custom_field['value']
-            if custom_field['name'] == 'Заказ 1С':
-                model['push_to_1C'] = custom_field['value']
+            match custom_field['name']:
+                case 'Постачальник':
+                    model['supplier'] = custom_field['value'][0]
+                case 'Номер постачальника':
+                    model['supplier_id'] = custom_field['value']
+                case 'Заказ 1С':
+                    model['push_to_1C'] = custom_field['value']
+                case 'Відправлено машиною':
+                    if custom_field['value']:
+                        model['tracking_code'] = TTN_SENT_BY_CAR
 
         paid_by_card = False
         for payment in model.get('payments', []):
@@ -184,16 +190,6 @@ class Order1CSupplier(Order1CBuyer):
     tracking_code: Optional[str] = None
     supplier_id: Optional[str] = None
     products: list[ProductSupplier] = None
-
-    @model_validator(mode='before')
-    def get_nested_2(cls, model):
-        for custom_field in model['custom_fields']:
-            if custom_field['name'] == 'Відправлено машиною':
-                if custom_field['value']:
-                    model['shipping']['tracking_code'] = TTN_SENT_BY_CAR
-
-        model['tracking_code'] = model['shipping']['tracking_code']
-        return model
 
     @field_validator('tracking_code')
     def check_tracking_code(cls, value):
