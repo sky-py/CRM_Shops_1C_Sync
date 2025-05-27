@@ -32,7 +32,7 @@ class KeyCRM:
                         }
 
     def parce_validate_response(self, r: requests.Response) -> dict:
-        r.raise_for_status()
+        # r.raise_for_status()
         remaining_limit = r.headers.get('X-Ratelimit-Remaining')
         print('Remaining limit:', remaining_limit)
         if remaining_limit:
