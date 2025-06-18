@@ -28,7 +28,8 @@ from retry import retry
 from send_sms import send_ttn_sms
 
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
-bad_orders = []
+parse_errors_orders_ids = []
+critical_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
@@ -39,16 +40,48 @@ logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-
            level='ERROR')
 
 
-def find_childs_products(crm_order: dict, all_orders: list[dict]) -> list[ProductBuyer]:
-    children_products = []
-    skus = [product['sku'] for product in crm_order['products']]
-    for curr_order in all_orders:
-        if curr_order['parent_id'] == crm_order['id']:  # found child of the order
-            for product in curr_order['products']:
-                if product['sku'] not in skus:
-                    children_products.append(ProductBuyer(**product))
-                    skus.append(product['sku'])
-    return children_products
+def find_all_tree_orders_any_level(order_dict: dict, crm_orders: list[dict]) -> list[dict]:
+    orders_map = {order['id']: order for order in crm_orders}
+    children_map = {}
+    for order in crm_orders:
+        children_map.setdefault(order['parent_id'], []).append(order['id'])
+
+    result = []
+    stack = [order_dict['id']]
+
+    while stack:
+        curr_node_id = stack.pop()
+        result.append(orders_map[curr_node_id])
+
+        if curr_node_id in children_map:
+            stack.extend(children_map[curr_node_id])
+
+    return result
+
+
+def find_unique_tree_products(tree_orders: list[dict]) -> list[dict]:
+    unique_products = []
+    skus = []
+    for order in tree_orders:
+        for product in order['products']:
+            if product['sku'] not in skus:
+                unique_products.append(product)
+                skus.append(product['sku'])
+    return unique_products
+    
+
+def find_root_order_id(order_dict: dict, crm_orders: list[dict]) -> int:
+    orders_map = {order['id']: order for order in crm_orders}
+    curr_order_id = order_dict['id']
+    while True:
+        if curr_order := orders_map.get(curr_order_id):
+            if curr_order['parent_id'] is None:
+                return curr_order['id']
+            else:
+                curr_order_id = curr_order['parent_id']
+        else:
+            raise Exception('Cannot find root order. Try expand time period or change root order')
+    
 
 
 def normalize_fio(fio: str) -> str:
@@ -301,12 +334,15 @@ def main():
 def process_orders(crm_orders: list[dict]):
     with Session.begin() as session:
         for order_dict in crm_orders:
+            if order_dict['id'] in critical_errors_orders_ids:
+                continue
+            
             try:
                 order = Order1CBuyer(**order_dict)
             except Exception as e:
-                if order_dict['id'] not in bad_orders:
+                if order_dict['id'] not in parse_errors_orders_ids:
                     logger.error(f'Error {e} parsing order: {order_dict['id']}')
-                    bad_orders.append(order_dict['id'])
+                    parse_errors_orders_ids.append(order_dict['id'])
                 continue
 
             if not is_order_valid(order):
@@ -317,9 +353,11 @@ def process_orders(crm_orders: list[dict]):
                 if db_order is None:  # if order doesn't exist in db
                     # if order.prices_rounded: # uncomment when CRM fixes update
                     #     update_crm_order(order)
-                    for product in find_childs_products(order_dict, crm_orders):
-                        order.products.append(product)  # adding child products to order
-                    process_new_buyer_order(order)
+                    tree_orders = find_all_tree_orders_any_level(order_dict, crm_orders)
+                    tree_products = find_unique_tree_products(tree_orders)
+                    extended_order = order.model_copy(deep=True)
+                    extended_order.products = [ProductBuyer(**product) for product in tree_products]
+                    process_new_buyer_order(extended_order)
                     make_supplier_comission_orders(order)   # untab this line for testing purposes
 
             if order.supplier:   # Supplier present, this is a Supplier order or also a Supplier order
@@ -327,6 +365,13 @@ def process_orders(crm_orders: list[dict]):
                 db_order = session.query(Order1CDB).filter(Order1CDB.key_crm_id == order.key_crm_id,
                                                            Order1CDB.parent_id.isnot(None)).first()
                 if db_order is None:  # if order doesn't exist in db
+                    try:
+                        root_id = find_root_order_id(order_dict, crm_orders)
+                    except Exception as e:
+                        logger.error(f'Error parsing supplier order {order_dict['id']}: {e}')
+                        critical_errors_orders_ids.append(order_dict['id'])
+                        continue
+                    order.parent_id = str(root_id)
                     process_new_supplier_order(order=order)
                 else:  # if order exists in db
                     order = Order1CSupplierUpdate(**order_dict)
