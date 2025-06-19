@@ -87,7 +87,7 @@ class KeyCRM:
                 orders += data['data']
             return orders
 
-    def get_one_order(self, order_id: int | str) -> dict:
+    def get_order(self, order_id: int | str) -> dict:
         return self.make_request(Method.GET, f'{Route.ORDER}/{order_id}', params={'include': include_order_fields})
 
     def new_order(self, data: dict) -> dict:

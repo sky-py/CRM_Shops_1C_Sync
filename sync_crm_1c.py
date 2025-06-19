@@ -29,7 +29,6 @@ from send_sms import send_ttn_sms
 
 crm = KeyCRM(constants.KEY_CRM_API_KEY)
 parse_errors_orders_ids = []
-critical_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
@@ -80,7 +79,17 @@ def find_root_order_id(order_dict: dict, crm_orders: list[dict]) -> int:
             else:
                 curr_order_id = curr_order['parent_id']
         else:
-            raise Exception('Cannot find root order. Try expand time period or change root order')
+            return find_root_order_id_via_api(curr_order_id)
+    
+    
+    
+def find_root_order_id_via_api(order_id: int) -> int:
+    order = crm.get_order(order_id)
+    while True:
+        if order['parent_id'] is None:
+            return order['id']
+        else:
+            order = crm.get_order(order['parent_id'])
     
 
 
@@ -334,8 +343,6 @@ def main():
 def process_orders(crm_orders: list[dict]):
     with Session.begin() as session:
         for order_dict in crm_orders:
-            if order_dict['id'] in critical_errors_orders_ids:
-                continue
             
             try:
                 order = Order1CBuyer(**order_dict)
@@ -365,12 +372,7 @@ def process_orders(crm_orders: list[dict]):
                 db_order = session.query(Order1CDB).filter(Order1CDB.key_crm_id == order.key_crm_id,
                                                            Order1CDB.parent_id.isnot(None)).first()
                 if db_order is None:  # if order doesn't exist in db
-                    try:
-                        root_id = find_root_order_id(order_dict, crm_orders)
-                    except Exception as e:
-                        logger.error(f'Error parsing supplier order {order_dict['id']}: {e}')
-                        critical_errors_orders_ids.append(order_dict['id'])
-                        continue
+                    root_id = find_root_order_id(order_dict, crm_orders)
                     order.parent_id = str(root_id)
                     process_new_supplier_order(order=order)
                 else:  # if order exists in db
