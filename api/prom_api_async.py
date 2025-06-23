@@ -122,3 +122,6 @@ class PromClient:
 
     async def get_messages(self, limit=PROM_OUTPUT_LIMIT) -> httpx.Response:
         return await self.make_request(f'/messages/list?limit={limit}')
+    
+    async def get_chat_messages(self, limit=PROM_OUTPUT_LIMIT) -> httpx.Response:
+        return await self.make_request(f'/chat/messages_history?limit={limit}')
