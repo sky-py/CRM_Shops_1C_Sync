@@ -12,7 +12,7 @@ from pathlib import Path
 from retry import retry
 
 ukrsalon = Insales(constants.UKRSALON_URL)
-crm = KeyCRM(constants.KEY_CRM_API_KEY)
+crm = KeyCRM(constants.CRM_API_KEY)
 
 reload_file = Path(__file__).with_suffix('.reload')
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",

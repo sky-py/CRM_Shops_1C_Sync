@@ -44,7 +44,7 @@ class ProductBuyer(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, populate_by_name=True)
 
     @field_validator('quantity')
-    def convert(cls, value: str):
+    def convert(cls, value: str) -> int:
         return int(value)
 
 
@@ -64,6 +64,13 @@ class ProductCommissionProSaleFreeDelivery(ProductSupplier):
     sku: str = Field(default='Commission_Prosale_free_delivery')
     name: str = Field(default='Комиссия просейл доставка')
     quantity: float = Field(default=1.0)
+
+
+class FakeProduct(ProductSupplier):
+    sku: str = Field(default='Fake_Product')
+    name: str = Field(default='Фиктивный товар')
+    quantity: float = Field(default=1.0)
+    price: float = Field(default=1.0)
 
 
 class Buyer(BaseModel):
@@ -94,6 +101,7 @@ class Order1CBuyer(BaseModel):
     proveden: bool = Field(default=False)
     key_crm_id: str = Field(alias='id')
     parent_id: Optional[str] = None
+    stage_group_id: int = Field(alias='status_group_id', exclude=True)
     shop: Optional[str] = None  # shop name by 1C
     source_uuid: Optional[int] = Field(default=None, exclude=True)  # order id by back office
     manager: Optional[str] = None
@@ -186,8 +194,9 @@ class Order1CBuyer(BaseModel):
 class Order1CSupplier(Order1CBuyer):
     action: str = Field(default='create_supplier_order')
     document_type: Document1C = Field(default=Document1C.SUPPLIER_ORDER, exclude=True)
-    supplier: str
+    supplier: Optional[str] = None
     tracking_code: Optional[str] = None
+    send_sms: bool = Field(default=True, exclude=True)
     supplier_id: Optional[str] = None
     products: list[ProductSupplier] = None
 

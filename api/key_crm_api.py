@@ -36,7 +36,7 @@ class KeyCRM:
         remaining_limit = r.headers.get('X-Ratelimit-Remaining')
         print('Remaining limit:', remaining_limit)
         if remaining_limit:
-            if int(remaining_limit) < 10:
+            if int(remaining_limit) < 20:
                 print('Too many requests, sleeping for 10 seconds')
                 time.sleep(10)
         return r.json()
