@@ -125,7 +125,7 @@ def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | 
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
     (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
     shutil.copyfile((Path(constants.json_orders_for_1c_path) / json_file), (Path(constants.json_archive_1C_path) / json_file))
-    if type(order) is not Order1CSupplierUpdate:
+    if order.action != 'update_supplier_order':
         logger.info(f'Created JSON file for {order.document_type.value}, key_crm_id = {order.key_crm_id}')
     else:
         logger.info(f'Created JSON Update file for Supplier order key_crm_id = {order.key_crm_id}')
