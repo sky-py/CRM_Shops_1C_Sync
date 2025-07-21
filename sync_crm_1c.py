@@ -23,7 +23,8 @@ from parse.parse_key_crm_order import (
     ProductBuyer,
     ProductCommissionProSale,
     ProductCommissionProSaleFreeDelivery,
-    FakeProduct
+    FakeProductBuyer,
+    FakeProductSupplier
 )
 from parse.parse_constants import TTN_SENT_BY_CAR, FAKE_SUPPLIER, PromStatus
 from retry import retry
@@ -340,14 +341,14 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
             return
         if is_prom_order_has_unreturned_CPA_commission(prom_order):    # if order has unreturned CPA commission
             logger.info(f'Start processing unreturned CPA commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})')
-            order.products = [FakeProduct()]
+            order.products = [FakeProductBuyer()]
             order.proveden = True
             msg = f'Заказ для учёта комиссии просейл по заказу {prom_order.shop}: {order.source_uuid}'
             order.manager_comment = f'{order.manager_comment}\n{msg}' if order.manager_comment else msg
             process_new_buyer_order(order)
             
             supplier_order = Order1CSupplier(**order_dict)
-            supplier_order.products = [FakeProduct()]
+            supplier_order.products = [FakeProductSupplier()]
             supplier_order.supplier = FAKE_SUPPLIER
             supplier_order.tracking_code = TTN_SENT_BY_CAR
             supplier_order.send_sms = False

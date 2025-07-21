@@ -66,11 +66,15 @@ class ProductCommissionProSaleFreeDelivery(ProductSupplier):
     quantity: float = Field(default=1.0)
 
 
-class FakeProduct(ProductSupplier):
+class FakeProductBuyer(ProductSupplier):
     sku: str = Field(default='Fake_Product')
     name: str = Field(default='Фиктивный товар')
     quantity: float = Field(default=1.0)
     price: float = Field(default=1.0)
+    
+
+class FakeProductSupplier(FakeProductBuyer):
+    price: float = Field(default=0.5)
 
 
 class Buyer(BaseModel):
