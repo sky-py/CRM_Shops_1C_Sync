@@ -80,7 +80,11 @@ def main():
             q = session.query(UkrsalonOrderDB).filter_by(source_uuid=order_dict['number']).first()
             if q is None:  # order not found in db
                 print('inserting order: ', order_dict['number'])
-                order = OrderInsales(**order_dict)
+                try:
+                    order = OrderInsales(**order_dict)
+                except Exception as e:
+                    logger.error(f'Error {e} parsing order: {order_dict['number']}')
+                    continue
                 set_order_shop(order)
                 crm_reply = crm.new_order(order.model_dump())
                 try:
