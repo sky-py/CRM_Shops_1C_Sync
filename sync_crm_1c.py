@@ -32,7 +32,7 @@ from retry import retry
 from send_sms import send_ttn_sms
 
 crm = KeyCRM(constants.CRM_API_KEY)
-rich_log = RichLog(header='Синхронизация CRM с 1С')
+rich_log = RichLog(header=f'Синхронизация CRM с 1С       {__file__}')
 
 parse_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
@@ -446,8 +446,7 @@ if __name__ == '__main__':
                 reload_file.unlink(missing_ok=True)
                 logger.info(f'SHUTTING DOWN {__file__}')
                 exit(0)
-            print(f'Sleeping {constants.time_to_sleep_crm_1c} sec\n')
-            time.sleep(constants.time_to_sleep_crm_1c)
+            rich_log.sleep_with_progress(constants.time_to_sleep_crm_1c)
     except Exception as e:
         logger.error(f'Error in {__file__}: {e}')
     finally:

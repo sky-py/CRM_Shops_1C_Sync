@@ -1,34 +1,46 @@
 import time
+from loguru import logger
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
+from rich.padding import Padding
 from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TextColumn
 from rich.text import Text
-from loguru import logger
 
 
 class RichLog:
     def __init__(self, header) -> None:
-        self.header_style = '[bold white on blue]'
-        self.request_style = '[bold green]'
-        self.log_style = '[italic white]'
+        self.header_style = 'bold white on blue'
+        self.request_style = 'bold green'
+        self.log_style = 'italic white'
         self._log = []
         self._request = ''
         self._log_height = 0
         self._console = Console()
         self._layout = Layout()
         self._layout.split_column(
-            Layout(name='header', size=3), Layout(name='request', size=3), Layout(name='log', ratio=1)
+            Layout(name='header', size=3),
+            Layout(name='request', size=3),
+            Layout(name='progress', size=1),
+            Layout(name='log', ratio=1),
         )
+        self._progress = Progress(
+            TextColumn('[bold blue]До запроса: {task.fields[remaining]}с'),
+            BarColumn(bar_width=None, complete_style='green'),
+            TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
+            console=self._console,
+            expand=True,
+        )
+
         self._live = Live(self._layout, console=self._console, screen=True)
-        self._layout['header'].update(Panel(self._format_text(header, self.header_style), height=3, expand=True))
+        self._layout['header'].update(Panel(Text(header, style=self.header_style), height=3, expand=True))
+        self._layout['progress'].update(Padding(self._progress, (0, 2)))
+        # self._layout['progress'].update(Panel(self._progress, title='Sleep Progress', height=3, expand=True))
         self._live.start()
 
     def stop(self) -> None:
         self._live.stop()
-
-    def _format_text(self, text, style) -> str:
-        return f'{style}{text}[/]'
 
     def print_request(self, text: str) -> None:
         self._request = text
@@ -39,32 +51,47 @@ class RichLog:
         self._log = self._log[-100:]
         self._update_screen()
 
+    def sleep_with_progress(self, duration: float) -> None:
+        task = self._progress.add_task('sleeping', total=duration, remaining=int(duration))
+
+        quantifier = 0.5
+        elapsed = 0
+        while elapsed < duration:
+            remaining = max(0, duration - elapsed)
+            self._progress.update(task, completed=elapsed, remaining=int(remaining))
+            elapsed += quantifier
+            time.sleep(quantifier)
+
+        self._progress.update(task, completed=duration, remaining=0)
+        self._progress.remove_task(task)
+
     @property
-    def visible_lines(self):
+    def visible_log(self):
+        #    ширина терминала − 2(border) − 2(padding по горизонтали)
+        console_width = self._console.size.width - 4
         # — подсчитываем, сколько строк помещается в области логов
         self._log_height = self._layout['log'].size or (self._console.size.height - 6)
         max_lines = max(0, self._log_height - 2)  # вычитаем 2 строки для рамки
-        visible_lines = self._log[-max_lines:]
-        return visible_lines
+        wrapped_lines = []
+        for msg in self._log:
+            text_obj = Text.from_ansi(msg)
+            # text_obj = Text(msg, style=self.log_style)
+            lines = text_obj.wrap(self._console, console_width)
+            wrapped_lines.extend(lines)
+        visible_lines = wrapped_lines[-max_lines:]
+
+        log_visible = Text()
+        for line in visible_lines:
+            log_visible.append(line)
+            log_visible.append('\n')
+        return log_visible
 
     def _update_screen(self):
-        # — обновляем статус
         self._layout['request'].update(
-            Panel(self._format_text(self._request, self.request_style), title='Status', height=3, expand=True)
+            Panel(Text(self._request, style=self.request_style), title='Status', height=3, expand=True)
         )
-
-        # — парсим разметку из Loguru, не накладываем своего стиля
-        log_render = Text.from_ansi('\n'.join(self.visible_lines))
-        # — обновляем панель с логом
         self._layout['log'].update(
-            Panel(
-                # self._format_text('\n'.join(self.visible_lines), self.log_style),
-                log_render,
-                title='Log',
-                height=self._log_height,
-                expand=True,
-                padding=(0, 1),
-            )
+            Panel(self.visible_log, title='Log', height=self._log_height, expand=True, padding=(0, 1))
         )
 
         self._live.update(self._layout)
@@ -73,14 +100,11 @@ class RichLog:
 if __name__ == '__main__':
     logger.remove()
     rich_log = RichLog(__file__)
-    logger.add(
-            lambda msg: rich_log.print_log(msg.strip()), level='DEBUG', colorize=True
-        )
+    logger.add(lambda msg: rich_log.print_log(msg.strip()), level='DEBUG', colorize=True)
     try:
         for i in range(200):
             rich_log.print_request(f'Request {i}')
-            # rich_log.print_log(f'Line {i}')
             logger.debug(f'Line {i}')
-            time.sleep(0.3)
+            rich_log.sleep_with_progress(40)
     finally:
         rich_log.stop()
