@@ -26,16 +26,21 @@ from parse.parse_key_crm_order import (
     FakeProductBuyer,
     FakeProductSupplier
 )
+from tools.rich_log import RichLog
 from parse.parse_constants import TTN_SENT_BY_CAR, FAKE_SUPPLIER, PromStatus
 from retry import retry
 from send_sms import send_ttn_sms
 
 crm = KeyCRM(constants.CRM_API_KEY)
+rich_log = RichLog(header='Синхронизация CRM с 1С')
+
 parse_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
 Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
 
+logger.remove()
+logger.add(lambda msg: rich_log.print_log(msg.strip()), level='INFO', colorize=True)
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
            level='INFO', backtrace=True, diagnose=True)
 logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
@@ -195,7 +200,7 @@ def get_interval_orders(*, start: datetime,
     time_window = f'{format_date_time(start)}, {format_date_time(end)}'
     filter_kwargs = {f'{filter_on}_between': time_window}
     orders = crm.get_orders(last_orders_amount=0, filter=filter_kwargs)
-    print(f'{len(orders)} orders were {filter_kwargs} UTC')
+    rich_log.print_request(f'{len(orders)} orders were received: {filter_kwargs} UTC')
     return orders
 
 
@@ -365,7 +370,6 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
             make_postupleniye_for_commission_order(commission_order)
 
 
-@logger.catch
 def main():
     start_time = datetime.now(timezone.utc) - timedelta(minutes=constants.CRM_MINUTES_INTERVAL_TO_CHECK)
     crm_orders = get_interval_orders(start=start_time)
@@ -432,14 +436,19 @@ def process_cpa_refunds():
 
 if __name__ == '__main__':
     logger.info(f'STARTING {__file__}')
-    while True:
-        print('Getting CRM orders...')
-        main()
-        if not IS_PRODUCTION_SERVER:
-            exit(0)
-        if reload_file.exists():
-            reload_file.unlink(missing_ok=True)
-            logger.info(f'SHUTTING DOWN {__file__}')
-            exit(0)
-        print(f'Sleeping {constants.time_to_sleep_crm_1c} sec\n')
-        time.sleep(constants.time_to_sleep_crm_1c)
+    try:
+        while True:
+            print('Getting CRM orders...')
+            main()
+            if not IS_PRODUCTION_SERVER:
+                exit(0)
+            if reload_file.exists():
+                reload_file.unlink(missing_ok=True)
+                logger.info(f'SHUTTING DOWN {__file__}')
+                exit(0)
+            print(f'Sleeping {constants.time_to_sleep_crm_1c} sec\n')
+            time.sleep(constants.time_to_sleep_crm_1c)
+    except Exception as e:
+        logger.error(f'Error in {__file__}: {e}')
+    finally:
+        rich_log.stop()
