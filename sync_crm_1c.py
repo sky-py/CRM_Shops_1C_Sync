@@ -1,5 +1,4 @@
 import json
-import time
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -40,7 +39,7 @@ Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
 Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
 
 logger.remove()
-logger.add(lambda msg: rich_log.print_log(msg.strip()), level='INFO', colorize=True)
+logger.add(lambda msg: rich_log.print_log(msg.split(':::')[0]), level='INFO', colorize=True)
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
            level='INFO', backtrace=True, diagnose=True)
 logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
@@ -131,10 +130,7 @@ def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | 
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
     (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
     shutil.copyfile((Path(constants.json_orders_for_1c_path) / json_file), (Path(constants.json_archive_1C_path) / json_file))
-    if order.action != 'update_supplier_order':
-        logger.info(f'Created JSON file for {order.document_type.value}, key_crm_id = {order.key_crm_id}')
-    else:
-        logger.info(f'Created JSON Update file for Supplier order key_crm_id = {order.key_crm_id}')
+    logger.info(f'Created JSON file: {json_file} for order: {order.key_crm_id} type: {order.document_type.value}')
 
 
 def add_to_track_and_sms(order: Order1CSupplier, old_ttn_number: Optional[str] = None):
@@ -217,8 +213,7 @@ def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromC
     """
     with Session.begin() as session:
         if session.query(Order1CDB).filter_by(key_crm_id=order.key_crm_id, document_type=order.document_type).first():
-            logger.info(f'DOESN\'t add order to db (already exists) key_crm_id: {order.key_crm_id}, '
-                        f'type: {order.document_type.value}')
+            logger.info(f'Order {order.key_crm_id} type: {order.document_type.value} already exists. Skipping...')
             return False
         if type(order) is Order1CBuyer:
             session.add(Order1CDB(key_crm_id=order.key_crm_id, document_type=order.document_type))
@@ -232,7 +227,7 @@ def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromC
                     supplier_id=order.supplier_id,
                 )
             )
-        logger.info(f'Added Order {order} to db')
+        logger.info(f'Order: {order.key_crm_id} type: {order.document_type.value} added to db. ::: {order}')
         return True
 
 
@@ -389,7 +384,7 @@ def process_orders(crm_orders: list[dict]):
                 order = Order1CBuyer(**order_dict)
             except Exception as e:
                 if order_dict['id'] not in parse_errors_orders_ids:
-                    logger.error(f'Error {e} parsing order: {order_dict['id']}')
+                    logger.error(f'Error parsing order {order_dict['id']}: {e} ')
                     parse_errors_orders_ids.append(order_dict['id'])
                 continue
             

@@ -47,7 +47,7 @@ class RichLog:
         self._update_screen()
 
     def print_log(self, text: str) -> None:
-        self._log.append(text)
+        self._log.append(text.strip())
         self._log = self._log[-100:]
         self._update_screen()
 
