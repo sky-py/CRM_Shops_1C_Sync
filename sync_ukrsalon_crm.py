@@ -10,11 +10,16 @@ from messengers import send_tg_message, send_service_tg_message
 from loguru import logger
 from pathlib import Path
 from retry import retry
+from tools.rich_log import RichLog
 
 ukrsalon = Insales(constants.UKRSALON_URL)
 crm = KeyCRM(constants.CRM_API_KEY)
+rich_log = RichLog(header=f'Синхронизация Укрсалона с CRM       {__file__}')
 
 reload_file = Path(__file__).with_suffix('.reload')
+
+logger.remove()
+logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
 logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
            level='INFO', backtrace=True, diagnose=True)
 logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
@@ -23,7 +28,7 @@ logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-
 
 def send_notification(order: OrderInsales, key_crm_id):
     if order.status_id != Status.CANCELLED.value:
-        send_text = (f'{"НОВЫЙ" if order.status_id == Status.NEW.value else "Принят"} заказ {order.source_uuid} на Укрсалоне\n'
+        send_text = (f'{"НОВЫЙ" if order.status_id == Status.NEW.value else "Принят"} заказ {order.source_uuid} на Укрсалоне =>\n'
                      f'Сумма: {round(order.total_price)} грн.\n'
                      f'Клиент: {order.buyer.full_name}\n'
                      f'Телефон: {order.buyer.phone}\n')
@@ -31,7 +36,7 @@ def send_notification(order: OrderInsales, key_crm_id):
             send_text += f'Админка: https://ukrsalon.com.ua/admin2/orders/{order.insales_id}\n'
                           # f'CRM: https://ukrsalon.keycrm.app/app/orders/view/{key_crm_id}')
         send_tg_message(send_text, *constants.managers_plus)
-        logger.info(send_text.replace('\n', ' '))
+        logger.info(f'Notification sent: {send_text}')
 
 
 def update_order_backoffice(order: OrderInsales):
@@ -73,27 +78,27 @@ def get_orders() -> list[dict]:
     return r.json()
 
 
-@logger.catch
-def main():
+def main() -> None:
     with Session.begin() as session:
         for order_dict in get_orders():
             q = session.query(UkrsalonOrderDB).filter_by(source_uuid=order_dict['number']).first()
             if q is None:  # order not found in db
-                print('inserting order: ', order_dict['number'])
                 try:
                     order = OrderInsales(**order_dict)
+                    logger.info(f'Got new order {order.source_uuid} => {order}')
                 except Exception as e:
-                    logger.error(f'Error {e} parsing order: {order_dict['number']}')
+                    logger.error(f'Error parsing order {order_dict["number"]}: {e}')
                     continue
                 set_order_shop(order)
                 crm_reply = crm.new_order(order.model_dump())
-                try:
-                    if crm_reply.get('errors').get('source_uuid')[0] == 'The source uuid has already been taken.':
-                        print('source_uuid: The source uuid has already been taken')
+                if crm_reply.get('errors', {}).get('source_uuid', [''])[0] == 'The source uuid has already been taken.':
+                    logger.info(f'Error inserting order {order.source_uuid} to CRM: The source uuid has already been taken. Trying to get order from CRM...')
+                    try:
                         crm_reply = crm.get_orders(filter={"source_uuid": order_dict['number']})[0]
+                        logger.info(f'Successfully got id {order.source_uuid} from CRM')
                         # crm_reply = crm.get_order_by_source_uuid(source_uuid=order_dict['number'])
-                except:
-                    pass
+                    except:
+                        logger.error(f'Error getting id {order.source_uuid} from CRM => {crm_reply}')
                 session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,
                                             insales_id=order.insales_id,
                                             key_crm_id=crm_reply['id'],
@@ -118,15 +123,15 @@ def main():
 
 if __name__ == '__main__':
     logger.info(f'STARTING {__file__}')
-    while True:
-        main()
-        if reload_file.exists():
-            reload_file.unlink(missing_ok=True)
-            logger.info(f'SHUTTING DOWN {__file__}')
-            exit(0)
-        print(f'Insales orders - sleeping {constants.time_to_sleep_insales_crm}')
-        time.sleep(constants.time_to_sleep_insales_crm)
-
-
-
-
+    try:
+        while True:
+            main()
+            if reload_file.exists():
+                reload_file.unlink(missing_ok=True)
+                logger.info(f'SHUTTING DOWN {__file__}')
+                exit(0)
+            rich_log.sleep(constants.time_to_sleep_insales_crm)
+    except Exception as e:
+        logger.error(f'Error in {__file__}: {e}')
+    finally:
+        rich_log.stop()

@@ -68,9 +68,9 @@ def send_sms(phone: str, alpha_name: str, text: str):
     # print('sending: ', alpha_name, phone, text)
     if DO_SEND_SMS:
         r = requests.post(url=sms_url, data=xml.encode('utf-8'), headers=sms_headers)
-        log_text = f'SEND SMS: {phone} | {alpha_name} ::: | {text} | Reply: {r.text}'
+        log_text = f'SEND SMS: {phone} | {alpha_name} => | {text} | Reply: {r.text}'
         logger.info(log_text) if r else logger.error(log_text)
         return r
     else:
-        logger.info(f'TEST SEND SMS {phone} | {alpha_name} ::: | {text} | Reply:')
+        logger.info(f'TEST SEND SMS {phone} | {alpha_name} => | {text} | Reply:')
 

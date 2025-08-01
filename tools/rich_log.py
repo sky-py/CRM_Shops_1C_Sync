@@ -10,9 +10,9 @@ from rich.text import Text
 
 
 class RichLog:
-    def __init__(self, header) -> None:
-        self.header_style = 'bold white on blue'
-        self.request_style = 'bold green'
+    def __init__(self, header, header_style='bold white on blue') -> None:
+        self.header_style = header_style
+        self.request_style = 'bold bright_green'
         self.log_style = 'italic white'
         self._log = []
         self._request = ''
@@ -27,7 +27,7 @@ class RichLog:
         )
         self._progress = Progress(
             TextColumn('[bold blue]До запроса: {task.fields[remaining]}с'),
-            BarColumn(bar_width=None, complete_style='green'),
+            BarColumn(bar_width=None, complete_style='bright_green'),
             TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
             console=self._console,
             expand=True,
@@ -38,32 +38,6 @@ class RichLog:
         self._layout['progress'].update(Padding(self._progress, (0, 2)))
         # self._layout['progress'].update(Panel(self._progress, title='Sleep Progress', height=3, expand=True))
         self._live.start()
-
-    def stop(self) -> None:
-        self._live.stop()
-
-    def print_request(self, text: str) -> None:
-        self._request = text
-        self._update_screen()
-
-    def print_log(self, text: str) -> None:
-        self._log.append(text.strip())
-        self._log = self._log[-100:]
-        self._update_screen()
-
-    def sleep_with_progress(self, duration: float) -> None:
-        task = self._progress.add_task('sleeping', total=duration, remaining=int(duration))
-
-        quantifier = 0.5
-        elapsed = 0
-        while elapsed < duration:
-            remaining = max(0, duration - elapsed)
-            self._progress.update(task, completed=elapsed, remaining=int(remaining))
-            elapsed += quantifier
-            time.sleep(quantifier)
-
-        self._progress.update(task, completed=duration, remaining=0)
-        self._progress.remove_task(task)
 
     @property
     def visible_log(self):
@@ -86,15 +60,40 @@ class RichLog:
             log_visible.append('\n')
         return log_visible
 
-    def _update_screen(self):
+    def _update_screen(self) -> None:
         self._layout['request'].update(
             Panel(Text(self._request, style=self.request_style), title='Status', height=3, expand=True)
         )
         self._layout['log'].update(
             Panel(self.visible_log, title='Log', height=self._log_height, expand=True, padding=(0, 1))
         )
-
         self._live.update(self._layout)
+
+    def print_request(self, text: str) -> None:
+        self._request = text
+        self._update_screen()
+
+    def print_log(self, text: str) -> None:
+        self._log.append(text.strip())
+        self._log = self._log[-100:]
+        self._update_screen()
+
+    def sleep(self, duration: float) -> None:
+        task = self._progress.add_task('sleeping', total=duration, remaining=int(duration))
+
+        quantifier = 0.5
+        elapsed = 0
+        while elapsed < duration:
+            remaining = max(0, duration - elapsed)
+            self._progress.update(task, completed=elapsed, remaining=int(remaining))
+            elapsed += quantifier
+            time.sleep(quantifier)
+
+        self._progress.update(task, completed=duration, remaining=0)
+        self._progress.remove_task(task)
+
+    def stop(self) -> None:
+        self._live.stop()
 
 
 if __name__ == '__main__':
@@ -105,6 +104,6 @@ if __name__ == '__main__':
         for i in range(200):
             rich_log.print_request(f'Request {i}')
             logger.debug(f'Line {i}')
-            rich_log.sleep_with_progress(40)
+            rich_log.sleep(40)
     finally:
         rich_log.stop()
