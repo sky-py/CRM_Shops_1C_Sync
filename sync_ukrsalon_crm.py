@@ -75,7 +75,9 @@ def set_order_shop(order: OrderInsales) -> None:
 def get_orders() -> list[dict]:
     r = ukrsalon.get_orders()
     r.raise_for_status()
-    return r.json()
+    orders = r.json()
+    rich_log.print_request(f'{len(orders)} were received')
+    return orders
 
 
 def main() -> None:
