@@ -1,5 +1,6 @@
 import time
 from loguru import logger
+from rich.align import Align
 from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
@@ -16,7 +17,6 @@ class RichLog:
         self.log_style = 'italic white'
         self._log = []
         self._request = ''
-        self._log_height = 0
         self._console = Console()
         self._layout = Layout()
         self._layout.split_column(
@@ -34,18 +34,19 @@ class RichLog:
         )
 
         self._live = Live(self._layout, console=self._console, screen=True)
-        self._layout['header'].update(Panel(Text(header, style=self.header_style), height=3, expand=True))
+        self._layout['header'].update(
+            Panel(Align(header, style=self.header_style, align='center'), height=3, expand=True)
+        )
         self._layout['progress'].update(Padding(self._progress, (0, 2)))
-        # self._layout['progress'].update(Panel(self._progress, title='Sleep Progress', height=3, expand=True))
         self._live.start()
 
     @property
-    def visible_log(self):
+    def visible_log(self) -> Text:
         #    ширина терминала − 2(border) − 2(padding по горизонтали)
         console_width = self._console.size.width - 4
         # — подсчитываем, сколько строк помещается в области логов
-        self._log_height = self._layout['log'].size or (self._console.size.height - 6)
-        max_lines = max(0, self._log_height - 2)  # вычитаем 2 строки для рамки
+        log_height = self._layout['log'].size or (self._console.size.height - 6)
+        max_lines = max(0, log_height - 2)  # вычитаем 2 строки для рамки
         wrapped_lines = []
         for msg in self._log:
             text_obj = Text.from_ansi(msg)
@@ -64,9 +65,7 @@ class RichLog:
         self._layout['request'].update(
             Panel(Text(self._request, style=self.request_style), title='Status', height=3, expand=True)
         )
-        self._layout['log'].update(
-            Panel(self.visible_log, title='Log', height=self._log_height, expand=True, padding=(0, 1))
-        )
+        self._layout['log'].update(Panel(self.visible_log, title='Log', expand=True, padding=(0, 1)))
         self._live.update(self._layout)
 
     def print_request(self, text: str) -> None:
@@ -104,6 +103,6 @@ if __name__ == '__main__':
         for i in range(200):
             rich_log.print_request(f'Request {i}')
             logger.debug(f'Line {i}')
-            rich_log.sleep(40)
+            rich_log.sleep(2)
     finally:
         rich_log.stop()

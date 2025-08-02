@@ -36,7 +36,7 @@ def send_notification(order: OrderInsales, key_crm_id):
             send_text += f'Админка: https://ukrsalon.com.ua/admin2/orders/{order.insales_id}\n'
                           # f'CRM: https://ukrsalon.keycrm.app/app/orders/view/{key_crm_id}')
         send_tg_message(send_text, *constants.managers_plus)
-        logger.info(f'Notification sent: {send_text}')
+        logger.info(f'{send_text}')
 
 
 def update_order_backoffice(order: OrderInsales):
