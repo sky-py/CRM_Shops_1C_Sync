@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Literal
 import constants
+from contextlib import redirect_stdout
 from api.key_crm_api import KeyCRM
 from constants import IS_PRODUCTION_SERVER
 from db.db_init import Session
@@ -367,7 +368,8 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
 
 def main():
     start_time = datetime.now(timezone.utc) - timedelta(minutes=constants.CRM_MINUTES_INTERVAL_TO_CHECK)
-    crm_orders = get_interval_orders(start=start_time)
+    with redirect_stdout(rich_log.console_to_rich_log_redirector):
+        crm_orders = get_interval_orders(start=start_time)
     # crm_orders = get_interval_orders(start=datetime(year=2024, month=5, day=1, tzinfo=timezone.utc), filter_on='created') 
     # crm_orders = get_active_orders() + get_orders_by_stage()
     if len(crm_orders) > constants.CRM_MAX_PROCESSING_ORDERS:

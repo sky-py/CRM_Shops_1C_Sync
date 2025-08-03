@@ -5,7 +5,7 @@ import json
 
 
 REQUEST_TIMEOUT = 20
-time_to_sleep = 30
+REQUESTS_EXCEEDED_TIME_TO_SLEEP = 30
 results_per_page = 500
 orders_per_page = 100
 
@@ -38,12 +38,13 @@ def wait(func):
     def wrapper(*args, **kwargs) -> requests.Response:
         return_value = func(*args, **kwargs)
         if return_value:
-            limits = return_value.headers['api-usage-limit']
-            print('limits: ', limits)
-            limits = limits.split('/')
-            if int(limits[0])/int(limits[1]) > 0.95:
-                print(f'waiting {time_to_sleep} sec')
-                time.sleep(time_to_sleep)
+            remaining_limits = return_value.headers.get('api-usage-limit')
+            print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
+            if remaining_limits:
+                remain, capacity = remaining_limits.split('/')
+                if int(remain) / int(capacity) > 0.95:
+                    print(f'Exceeded limits, waiting {REQUESTS_EXCEEDED_TIME_TO_SLEEP} sec...')
+                    time.sleep(REQUESTS_EXCEEDED_TIME_TO_SLEEP)
             return return_value
     return wrapper
 

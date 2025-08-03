@@ -1,4 +1,4 @@
-import time
+from contextlib import redirect_stdout
 import constants
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
@@ -82,7 +82,9 @@ def get_orders() -> list[dict]:
 
 def main() -> None:
     with Session.begin() as session:
-        for order_dict in get_orders():
+        with redirect_stdout(rich_log.console_to_rich_log_redirector):
+            orders = get_orders()
+        for order_dict in orders:
             q = session.query(UkrsalonOrderDB).filter_by(source_uuid=order_dict['number']).first()
             if q is None:  # order not found in db
                 try:

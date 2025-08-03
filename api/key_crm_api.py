@@ -4,6 +4,7 @@ import requests
 from enum import StrEnum
 
 REQUEST_TIMEOUT = 20
+REQUESTS_EXCEEDED_TIME_TO_SLEEP = 10
 results_per_page = 50
 include_order_fields = 'buyer,manager,products.offer,shipping.deliveryService,custom_fields,payments'
 
@@ -33,12 +34,12 @@ class KeyCRM:
 
     def parce_validate_response(self, r: requests.Response) -> dict:
         # r.raise_for_status()
-        remaining_limit = r.headers.get('X-Ratelimit-Remaining')
-        print('Remaining limit:', remaining_limit)
-        if remaining_limit:
-            if int(remaining_limit) < 20:
-                print('Too many requests, sleeping for 10 seconds')
-                time.sleep(10)
+        remaining_limits = r.headers.get('X-Ratelimit-Remaining')
+        print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
+        if remaining_limits:
+            if int(remaining_limits) < 20:
+                print(f'Exceeded limits, waiting {REQUESTS_EXCEEDED_TIME_TO_SLEEP} sec...')
+                time.sleep(REQUESTS_EXCEEDED_TIME_TO_SLEEP)
         return r.json()
 
     def make_request(self, method: Method, route: str, params=None, json_data=None) -> dict:
