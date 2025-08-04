@@ -34,11 +34,12 @@ class RichLog:
             Layout(name='progress', size=1),
             Layout(name='log', ratio=1),
         )
+        self._layout['request_row'].split_row(Layout(name='request', ratio=5), Layout(name='original_console', ratio=2))
 
-        self._layout['request_row'].split_row(Layout(name='request', ratio=3), Layout(name='original_console', ratio=1))
-
-        self._layout['request_row'].visible = False
         self._layout['progress'].visible = False
+        self._layout['request_row'].visible = False
+        self._layout['request'].visible = False
+        self._layout['original_console'].visible = False
 
         self._progress = Progress(
             TextColumn('[bold blue]До запроса: {task.fields[remaining]}с'),

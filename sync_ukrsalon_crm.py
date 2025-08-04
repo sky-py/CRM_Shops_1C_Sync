@@ -76,7 +76,7 @@ def get_orders() -> list[dict]:
     r = ukrsalon.get_orders()
     r.raise_for_status()
     orders = r.json()
-    rich_log.print_request(f'{len(orders)} were received')
+    rich_log.print_request(f'{len(orders)} last orders were received')
     return orders
 
 
