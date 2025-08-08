@@ -65,6 +65,7 @@ async def add_order_to_db(order: OrderProm, session: Session_async):
             is_accepted=False if order.status == PromStatus.NEW or order.status == PromStatus.PAID else True,
             cpa_commission=order.cpa_commission,
             delivery_commission=order.delivery_commision,
+            order_commission=order.order_commission,
             cpa_is_refunded=order.cpa_is_refunded,
             ordered_at=order.date_created,
         )
@@ -149,6 +150,10 @@ async def process_one_order(order: OrderProm, session: Session_async, color: str
         if order.delivery_commision != order_db.delivery_commission:
             order_db.delivery_commission = order.delivery_commision
             logger.info(f'Updated delivery commission for {order.shop}:{order.order_id} to {order.delivery_commision}')
+        
+        if order.order_commission != order_db.order_commission:
+            order_db.order_commission = order.order_commision
+            logger.info(f'Updated order commission for {order.shop}:{order.order_id} to {order.order_commission}')
 
 
 async def process_new_order(order: OrderProm, session: Session_async):

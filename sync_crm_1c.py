@@ -23,6 +23,7 @@ from parse.parse_key_crm_order import (
     ProductBuyer,
     ProductCommissionProSale,
     ProductCommissionProSaleFreeDelivery,
+    ProductCommissionProSaleForOrder,
     FakeProductBuyer,
     FakeProductSupplier
 )
@@ -284,10 +285,21 @@ def make_supplier_comission_orders(buyer_order: Order1CBuyer):
 
             if prom_order.delivery_commission > 0:  # if order has delivery commission
                 commission_order = Order1CSupplierPromCommissionOrder(
-                    key_crm_id=f'{prom_order.order_id}_fd',  # free delivery
+                    key_crm_id=f'{prom_order.order_id}_fd',  # fd = free delivery
                     parent_id=buyer_order.key_crm_id,
                     supplier=f'Просейл {prom_order.shop}',
                     products=[ProductCommissionProSaleFreeDelivery(price=prom_order.delivery_commission)],
+                    shop=prom_order.shop,
+                )
+                process_new_supplier_order(commission_order)
+                make_postupleniye_for_commission_order(commission_order)
+                
+            if prom_order.order_commission > 0:  # if order has order commission
+                commission_order = Order1CSupplierPromCommissionOrder(
+                    key_crm_id=f'{prom_order.order_id}_oc',  # oc = order commission
+                    parent_id=buyer_order.key_crm_id,
+                    supplier=f'Просейл {prom_order.shop}',
+                    products=[ProductCommissionProSaleForOrder(price=prom_order.order_commission)],
                     shop=prom_order.shop,
                 )
                 process_new_supplier_order(commission_order)
@@ -331,8 +343,12 @@ def is_order_cancelled(order: Order1CBuyer) -> bool:
     return order.stage_group_id == constants.CRM_ORDER_CANCELLED_STAGE_GROUP_ID
 
 
-def is_prom_order_has_unreturned_CPA_commission(prom_order: PromOrderDB) -> bool:
+def is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order: PromOrderDB) -> bool:
     return prom_order.status == PromStatus.CANCELLED and prom_order.cpa_commission > 0 and not prom_order.cpa_is_refunded
+
+
+def is_prom_order_cancelled_and_has_order_commission(prom_order: PromOrderDB) -> bool:
+    return prom_order.status == PromStatus.CANCELLED and prom_order.order_commission > 0 
 
 
 def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dict) -> None:
@@ -340,11 +356,18 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
         prom_order = session.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
         if prom_order is None:  
             return
-        if is_prom_order_has_unreturned_CPA_commission(prom_order):    # if order has unreturned CPA commission
-            logger.info(f'Start processing unreturned CPA commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})')
+        
+        products = []
+        if is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order):
+            products.append(ProductCommissionProSale(price=prom_order.cpa_commission))
+        if is_prom_order_cancelled_and_has_order_commission(prom_order):
+            products.append(ProductCommissionProSaleForOrder(price=prom_order.order_commission))
+            
+        if products:   
+            logger.info(f'Start processing unreturned CPA commission or order commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})')
             order.products = [FakeProductBuyer()]
             order.proveden = True
-            msg = f'Заказ для учёта комиссии просейл по заказу {prom_order.shop}: {order.source_uuid}'
+            msg = f'Заказ для учёта комиссии за заказ пром и (возможно) невозвращенной комиссии по просейл по заказу {prom_order.shop}: {order.source_uuid}'
             order.manager_comment = f'{order.manager_comment}\n{msg}' if order.manager_comment else msg
             process_new_buyer_order(order)
             
@@ -359,7 +382,7 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
                 key_crm_id=f'{prom_order.order_id}',
                 parent_id=order.key_crm_id,
                 supplier=f'Просейл {prom_order.shop}',
-                products=[ProductCommissionProSale(price=prom_order.cpa_commission)],
+                products=products,
                 shop=prom_order.shop,
             )
             process_new_supplier_order(commission_order)

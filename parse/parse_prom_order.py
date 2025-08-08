@@ -50,6 +50,7 @@ class OrderProm(BaseModel):
     cpa_commission: float = Field(default=0)
     cpa_is_refunded: bool  # if CPA returned to us
     delivery_commision: float = Field(default=0)  # we pay this amount for free delivery
+    order_commission: float = Field(default=0)  # we pay this amount for order
     products: list[Product]
     shipping: Shipping
 
@@ -66,6 +67,10 @@ class OrderProm(BaseModel):
 
         model['cpa_is_refunded'] = bool(model.get('cpa_commission') and model.get('cpa_commission').get('is_refunded'))
         model['cpa_commission'] = float(model.get('cpa_commission', {}).get('amount', 0))
+
+        if prosale_commission := model.get('prosale_commission'):
+            if prosale_commission['type'] == 2:
+                model['order_commission'] = float(prosale_commission['value'])
 
         if model['has_order_promo_free_delivery']:
             try:

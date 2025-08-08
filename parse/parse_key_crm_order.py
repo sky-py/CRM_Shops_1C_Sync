@@ -64,6 +64,12 @@ class ProductCommissionProSaleFreeDelivery(ProductSupplier):
     sku: str = Field(default='Commission_Prosale_free_delivery')
     name: str = Field(default='Комиссия просейл доставка')
     quantity: float = Field(default=1.0)
+    
+    
+class ProductCommissionProSaleForOrder(ProductSupplier):
+    sku: str = Field(default='Commission_Prosale_for_order')
+    name: str = Field(default='Комиссия просейл за заказ')
+    quantity: float = Field(default=1.0)
 
 
 class FakeProductBuyer(ProductSupplier):

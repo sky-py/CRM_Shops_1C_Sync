@@ -1,4 +1,5 @@
 ALTER TABLE prom_orders ADD COLUMN delivery_commission float8 DEFAULT 0.0;
+ALTER TABLE prom_orders ADD COLUMN order_commission float8 DEFAULT 0.0;
 
 ALTER TABLE orders_1c ALTER COLUMN key_crm_id TYPE VARCHAR(20) USING key_crm_id::VARCHAR(20);
 ALTER TABLE orders_1c ALTER COLUMN parent_id TYPE VARCHAR(20) USING parent_id::VARCHAR(20);

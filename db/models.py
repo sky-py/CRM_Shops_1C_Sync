@@ -50,6 +50,7 @@ class PromOrderDB(Base):
     cpa_is_refunded = Column(Boolean, default=False)
     ordered_at = Column(DateTime(timezone=True), default=func.now())
     delivery_commission = Column(Float, default=0.0)
+    order_commission = Column(Float, default=0.0)
 
     def __repr__(self):
         return (f'Order {self.order_id} ordered_at:{self.ordered_at} status:{self.status.value} shop:{self.shop} '
