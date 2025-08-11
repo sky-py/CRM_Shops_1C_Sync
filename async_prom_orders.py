@@ -15,6 +15,7 @@ from parse.parse_prom_order import OrderProm
 from retry import retry
 from sqlalchemy.future import select
 
+
 colorama.init()
 bad_orders = []
 reload_file = Path(__file__).with_suffix('.reload')
@@ -25,10 +26,12 @@ logger.add(
     backtrace=True,
     diagnose=True,
 )
+
 logger.add(
     sink=lambda msg: send_service_tg_message(msg),
     format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
     level='ERROR',
+    filter=lambda record: record.update(exception=None) or True,
 )
 
 
@@ -85,34 +88,33 @@ def get_color(shop: dict) -> str:
 
 def order_date_is_valid(date: str) -> bool:
     return datetime.fromisoformat(date).replace(tzinfo=None) > (datetime.now() -
-            timedelta(days=constants.PROM_DAYS_TO_CONSIDER_ORDER_FINISHED))
+            timedelta(days=constants.PROM_CONSIDER_ORDER_FINISHED_DAYS))
 
 
-@retry(stop_after_delay=constants.prom_stop_tries_after_delay)
+@retry(stop_after_delay=constants.PROM_STOP_TRIES_AFTER_DELAY_SEC)
 async def get_orders(shop_client: PromClient) -> list | None:
-    from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK)
+    from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK_MIN)
     orders = await shop_client.get_orders(last_modified_from=from_date, limit=1000)
     return [order for order in orders if order_date_is_valid(order['date_created'])]
     # orders = await shop_client.get_orders(date_from=datetime(year=2024, month=5, day=1), date_to=datetime.now(), limit=1000)  # for getting all orders from date
     # return orders  # for getting all orders from date
 
 
-@logger.catch  # TODO inform worker does not run
 async def worker(shop: dict):
     shop_client = PromClient(shop['token'])
     color = get_color(shop)
     shop_name = shop['name']
     print(color + f'START PROM {shop_name} ')
-    await asyncio.sleep(random.randint(0, constants.prom_sleep_time))
+    await asyncio.sleep(random.randint(0, constants.PROM_SLEEP_TIME))
     while True:
         orders = await get_orders(shop_client)
         # print(f'{shop_name} got {len(orders)} orders')  # for testing purposes
         await process_orders(orders, shop_name, color)
-        print(color + f'PROM {shop_name} - OK. Sleeping for {constants.prom_sleep_time} seconds')
+        print(color + f'PROM {shop_name} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')
         if reload_file.exists():
             logger.info(f'STOPPING {shop_name} thread')
             return
-        await asyncio.sleep(constants.prom_sleep_time)
+        await asyncio.sleep(constants.PROM_SLEEP_TIME)
         # await asyncio.sleep(3600) # for testing purposes, remove in production
 
 
@@ -123,11 +125,11 @@ async def process_orders(orders: list, shop_name: str, color: str):
                 try:
                     order = OrderProm(**order_dict)
                     order.shop = shop_name
-                    await process_one_order(order, session, color)
                 except Exception as e:
                     if order_dict['id'] not in bad_orders:
-                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]}')
+                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]} {e}')
                         bad_orders.append(order_dict['id'])
+                await process_one_order(order, session, color)
 
 
 async def process_one_order(order: OrderProm, session: Session_async, color: str):
@@ -152,7 +154,7 @@ async def process_one_order(order: OrderProm, session: Session_async, color: str
             logger.info(f'Updated delivery commission for {order.shop}:{order.order_id} to {order.delivery_commision}')
         
         if order.order_commission != order_db.order_commission:
-            order_db.order_commission = order.order_commision
+            order_db.order_commission = order.order_commission
             logger.info(f'Updated order commission for {order.shop}:{order.order_id} to {order.order_commission}')
 
 
@@ -164,14 +166,18 @@ async def process_new_order(order: OrderProm, session: Session_async):
 
 
 async def main():
-    logger.info(f'STARTING {__file__}')
+    if platform.system() == 'Windows':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     await create_tables()
     await asyncio.gather(*[worker(shop) for shop in constants.prom_shops])
-    reload_file.unlink(missing_ok=True)
-    logger.info(f'SHUTTING DOWN {__file__}')
 
 
 if __name__ == '__main__':
-    if platform.system() == 'Windows':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(main())
+    logger.info(f'STARTING {__file__}')
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.exception(f'Error in {__file__}: {e}')
+    finally:
+        reload_file.unlink(missing_ok=True)
+        logger.info(f'SHUTTING DOWN {__file__}')

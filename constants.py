@@ -50,10 +50,10 @@ prom_shops = [
     {'name': Shops.KRASUNIA.value, 'token': os.getenv('prom_krasunia_orders_r'), 'managers': managers_plus},
 ]
 
-prom_sleep_time = 5  # sec
-prom_stop_tries_after_delay = 200  # sec
-PROM_TIME_INTERVAL_TO_CHECK = 1320  # minutes (twenty-four hours)
-PROM_DAYS_TO_CONSIDER_ORDER_FINISHED = 60  # days
+PROM_SLEEP_TIME = 5  # sec
+PROM_STOP_TRIES_AFTER_DELAY_SEC = 1800  # sec
+PROM_TIME_INTERVAL_TO_CHECK_MIN = 1320  # minutes (twenty-four hours)
+PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days
 
 
 # ================================================= HOROSHOP =============================================

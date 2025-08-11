@@ -78,15 +78,15 @@ async def worker(shop: dict):
     shop_client = HoroshopClient(shop_url=shop['url'], login=shop['login'], password=shop['password'])
     color = get_color(shop)
     print(color + f'START HOROSHOP {shop['name']} ')
-    await asyncio.sleep(random.randint(0, constants.prom_sleep_time))
+    await asyncio.sleep(random.randint(0, constants.PROM_SLEEP_TIME))
     while True:
         orders = await get_orders(shop_client)
         await process_orders(orders, shop['name'], color)
-        print(color + f'HOROSHOP {shop['name']} - OK. Sleeping for {constants.prom_sleep_time} seconds')
+        print(color + f'HOROSHOP {shop['name']} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')
         if reload_file.exists():
             logger.info(f'STOPPING {shop['name']} thread')
             return
-        await asyncio.sleep(constants.prom_sleep_time)
+        await asyncio.sleep(constants.PROM_SLEEP_TIME)
 
 
 async def process_orders(orders: list, shop_name: str, color: str):
