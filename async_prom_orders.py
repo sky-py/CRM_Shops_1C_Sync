@@ -3,6 +3,7 @@ import platform
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 import colorama
 import constants
 from api.prom_api_async import PromClient
@@ -92,12 +93,16 @@ def order_date_is_valid(date: str) -> bool:
 
 
 @retry(stop_after_delay=constants.PROM_STOP_TRIES_AFTER_DELAY_SEC)
-async def get_orders(shop_client: PromClient) -> list | None:
-    from_date = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK_MIN)
-    orders = await shop_client.get_orders(last_modified_from=from_date, limit=1000)
-    return [order for order in orders if order_date_is_valid(order['date_created'])]
-    # orders = await shop_client.get_orders(date_from=datetime(year=2024, month=5, day=1), date_to=datetime.now(), limit=1000)  # for getting all orders from date
-    # return orders  # for getting all orders from date
+async def get_orders(shop_client: PromClient) -> Optional[list]:
+    last_modified_from = None
+    # comment next line for getting ALL orders
+    last_modified_from = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK_MIN)  
+    if last_modified_from is not None:
+        orders = await shop_client.get_orders(last_modified_from=last_modified_from, limit=1000)
+        return [order for order in orders if order_date_is_valid(order['date_created'])]
+    else:  # for getting ALL orders from date
+        orders = await shop_client.get_orders(created_from=datetime(year=2024, month=5, day=1), created_to=datetime.now(), limit=1000) 
+        return orders
 
 
 async def worker(shop: dict):
@@ -107,7 +112,11 @@ async def worker(shop: dict):
     print(color + f'START PROM {shop_name} ')
     await asyncio.sleep(random.randint(0, constants.PROM_SLEEP_TIME))
     while True:
-        orders = await get_orders(shop_client)
+        try:
+            orders = await get_orders(shop_client)
+        except Exception as e:
+            logger.error(f'Problem with {shop_name} - {e}')
+            continue
         # print(f'{shop_name} got {len(orders)} orders')  # for testing purposes
         await process_orders(orders, shop_name, color)
         print(color + f'PROM {shop_name} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')

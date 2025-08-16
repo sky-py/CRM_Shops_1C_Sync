@@ -48,8 +48,8 @@ class PromClient:
         limit: int = PROM_OUTPUT_LIMIT,
         last_modified_from: Optional[datetime] = None,
         last_modified_to: Optional[datetime] = None,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
+        created_from: Optional[datetime] = None,
+        created_to: Optional[datetime] = None,
     ) -> list:
         """
         :param limit: Обмеження кількості замовлень у відповіді.
@@ -60,11 +60,11 @@ class PromClient:
         Можна використовувати тільки один з параметрів date_from, date_to або last_modified_from 
         """
         orders = []
-        if date_from and date_to or last_modified_from and last_modified_to:
-            d_from = date_from if date_from and date_to else last_modified_from
-            d_to = date_to if date_from and date_to else last_modified_to
-            key_from = 'date_from' if date_from else 'last_modified_from'
-            key_to = 'date_to' if date_to else 'last_modified_to'
+        if created_from and created_to or last_modified_from and last_modified_to:
+            d_from = created_from if created_from and created_to else last_modified_from
+            d_to = created_to if created_from and created_to else last_modified_to
+            key_from = 'date_from' if created_from else 'last_modified_from'
+            key_to = 'date_to' if created_to else 'last_modified_to'
             days_interval_adapted = INITIAL_DAYS_INTERVAL_FOR_ORDERS
             while d_from < d_to:
                 params = {}
@@ -88,10 +88,10 @@ class PromClient:
                 params['last_modified_from'] = get_timestamp(last_modified_from)
             if last_modified_to:
                 params['last_modified_to'] = get_timestamp(last_modified_to)
-            if date_from:
-                params['date_from'] = get_timestamp(date_from)
-            if date_to:
-                params['date_to'] = get_timestamp(date_to)
+            if created_from:
+                params['date_from'] = get_timestamp(created_from)
+            if created_to:
+                params['date_to'] = get_timestamp(created_to)
 
             r = await self.make_request(url='/orders/list', params=params)
             orders = r.json()['orders']
