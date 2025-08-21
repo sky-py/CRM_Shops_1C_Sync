@@ -1,7 +1,7 @@
 from flask import Flask, request
 from waitress import serve
 from parse.parse_key_crm_order import OrderKeyCrmShort
-from db.db_init import Session
+from db.db_init import Session_Sync
 from db.models import UkrsalonOrderDB
 from api.insales_api import Insales
 import constants
@@ -57,7 +57,7 @@ def process_request():
         send_service_tg_message(f"Ошибка в программе {__file__}\n{str(e)}")
     else:
         logger.info(f'Got webhook for order: {key_order.key_crm_id}')
-        with Session.begin() as session:
+        with Session_Sync.begin() as session:
             db_order = session.query(UkrsalonOrderDB).filter_by(key_crm_id=key_order.key_crm_id).first()
             if db_order is not None:
                 logger.info(f'FOUND in DB order {key_order.key_crm_id}')

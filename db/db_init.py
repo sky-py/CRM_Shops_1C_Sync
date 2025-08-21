@@ -1,9 +1,8 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 import os
 from dotenv import load_dotenv
 from db.models import Base
-# from sqlalchemy.orm import Session as Session_Simple
 
 load_dotenv('/etc/env/db.env')
 
@@ -14,6 +13,4 @@ host = 'localhost'
 
 engine = create_engine(f'postgresql+psycopg2://{user}:{password}@{host}/{db}', echo=False)
 Base.metadata.create_all(bind=engine)
-Session = sessionmaker(bind=engine)
-
-# session = Session_Simple(bind=engine)
+Session_Sync = sessionmaker(bind=engine)

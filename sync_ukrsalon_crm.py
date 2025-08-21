@@ -2,7 +2,7 @@ from contextlib import redirect_stdout
 import constants
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
-from db.db_init import Session
+from db.db_init import Session_Sync
 from db.models import UkrsalonOrderDB
 from parse.parse_insales_order import OrderInsales
 from parse.parse_constants import Status, ukrsalon_crm_id, insta_ukrsalon_crm_id
@@ -81,7 +81,7 @@ def get_orders() -> list[dict]:
 
 
 def main() -> None:
-    with Session.begin() as session:
+    with Session_Sync.begin() as session:
         with redirect_stdout(rich_log.console_to_rich_log_redirector):
             orders = get_orders()
         for order_dict in orders:
@@ -100,7 +100,6 @@ def main() -> None:
                     try:
                         crm_reply = crm.get_orders(filter={"source_uuid": order_dict['number']})[0]
                         logger.info(f'Successfully got id {order.source_uuid} from CRM')
-                        # crm_reply = crm.get_order_by_source_uuid(source_uuid=order_dict['number'])
                     except:
                         logger.error(f'Error getting id {order.source_uuid} from CRM => {crm_reply}')
                 session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,

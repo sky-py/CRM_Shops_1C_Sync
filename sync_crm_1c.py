@@ -7,8 +7,8 @@ import constants
 from contextlib import redirect_stdout
 from api.key_crm_api import KeyCRM
 from constants import IS_PRODUCTION_SERVER
-from db.db_init import Session
-from db.models import Order1CDB, PromCPARefundQueueDB, PromOrderDB
+from db.db_init import Session_Sync, Session
+from db.models import Order1CDB, PromCPARefundOutbox, PromOrderDB, PromDeliveryCommissionOutbox
 from db.sql_init import add_ttn_to_db
 from loguru import logger
 from messengers import send_service_tg_message
@@ -91,7 +91,6 @@ def find_root_order_id(order_dict: dict, crm_orders: list[dict]) -> int:
             return find_root_order_id_via_api(curr_order_id)
     
     
-    
 def find_root_order_id_via_api(order_id: int) -> int:
     order = crm.get_order(order_id)
     while True:
@@ -99,7 +98,6 @@ def find_root_order_id_via_api(order_id: int) -> int:
             return order['id']
         else:
             order = crm.get_order(order['parent_id'])
-    
 
 
 def normalize_fio(fio: str) -> str:
@@ -207,41 +205,41 @@ def is_order_proper_filled(order: Order1CBuyer) -> bool:
     return order.push_to_1C and order.manager and order.buyer and order.buyer.phone and not order.buyer.has_duplicates
 
 
-def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder) -> bool:
+def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder, session: Session) -> bool:
     """
     Adds the order to the database if it doesn't exist yet.
     :param order: The order to add to the database.
     :return: True if the order was added, False if it already existed.
     """
-    with Session.begin() as session:
-        if session.query(Order1CDB).filter_by(key_crm_id=order.key_crm_id, document_type=order.document_type).first():
-            logger.info(f'Order {order.key_crm_id} type: {order.document_type.value} already exists. Skipping...')
-            return False
-        if type(order) is Order1CBuyer:
-            session.add(Order1CDB(key_crm_id=order.key_crm_id, document_type=order.document_type))
-        else:
-            session.add(
-                Order1CDB(
-                    key_crm_id=order.key_crm_id,
-                    parent_id=order.parent_id,
-                    document_type=order.document_type,
-                    tracking_code=order.tracking_code,
-                    supplier_id=order.supplier_id,
-                )
+    if session.query(Order1CDB).filter_by(key_crm_id=order.key_crm_id, document_type=order.document_type).first():
+        logger.info(f'Order {order.key_crm_id} type: {order.document_type.value} already exists. Skipping...')
+        return False
+    if type(order) is Order1CBuyer:
+        session.add(Order1CDB(key_crm_id=order.key_crm_id, document_type=order.document_type))
+    else:
+        session.add(
+            Order1CDB(
+                key_crm_id=order.key_crm_id,
+                parent_id=order.parent_id,
+                document_type=order.document_type,
+                tracking_code=order.tracking_code,
+                supplier_id=order.supplier_id,
             )
-        logger.info(f'Order: {order.key_crm_id} type: {order.document_type.value} added to db. => {order}')
-        return True
+        )
+    session.flush()
+    logger.info(f'Order: {order.key_crm_id} type: {order.document_type.value} added to db. => {order}')
+    return True
 
 
-def process_new_buyer_order(order: Order1CBuyer):
-    if add_order_to_db(order):
+def process_new_buyer_order(order: Order1CBuyer, session: Session):
+    if add_order_to_db(order, session):
         create_json_file(order)
 
 
-def process_new_supplier_order(order: Order1CSupplier | Order1CSupplierPromCommissionOrder):
+def process_new_supplier_order(order: Order1CSupplier | Order1CSupplierPromCommissionOrder, session: Session):
     if order.parent_id is None:
         order.parent_id = order.key_crm_id
-    if add_order_to_db(order):
+    if add_order_to_db(order, session):
         order_copy = order.model_copy(deep=True)
         order_copy.tracking_code = None
         order_copy.supplier_id = None
@@ -268,9 +266,9 @@ def process_existing_supplier_order(order: Order1CSupplierUpdate, db_order: Orde
         create_json_file(order, include_keys={'action', 'key_crm_id', 'tracking_code', 'supplier_id'})
 
 
-def make_supplier_comission_orders(buyer_order: Order1CBuyer):
-    with Session.begin() as session:
-        prom_order = session.query(PromOrderDB).filter_by(order_id=buyer_order.source_uuid).first()
+def make_supplier_comission_orders(buyer_order: Order1CBuyer, session: Session):
+    with Session_Sync.begin() as session_inner:
+        prom_order = session_inner.query(PromOrderDB).filter_by(order_id=buyer_order.source_uuid).first()
         if prom_order is not None:  # if order at Prom orders
             if prom_order.cpa_commission > 0:  # if order has CPA commission
                 commission_order = Order1CSupplierPromCommissionOrder(
@@ -280,20 +278,9 @@ def make_supplier_comission_orders(buyer_order: Order1CBuyer):
                     products=[ProductCommissionProSale(price=prom_order.cpa_commission)],
                     shop=prom_order.shop,
                 )
-                process_new_supplier_order(commission_order)
-                make_postupleniye_for_commission_order(commission_order)
+                process_new_supplier_order(commission_order, session)
+                make_postupleniye_for_commission_order(commission_order, session)
 
-            if prom_order.delivery_commission > 0:  # if order has delivery commission
-                commission_order = Order1CSupplierPromCommissionOrder(
-                    key_crm_id=f'{prom_order.order_id}_fd',  # fd = free delivery
-                    parent_id=buyer_order.key_crm_id,
-                    supplier=f'Просейл {prom_order.shop}',
-                    products=[ProductCommissionProSaleFreeDelivery(price=prom_order.delivery_commission)],
-                    shop=prom_order.shop,
-                )
-                process_new_supplier_order(commission_order)
-                make_postupleniye_for_commission_order(commission_order)
-                
             if prom_order.order_commission > 0:  # if order has order commission
                 commission_order = Order1CSupplierPromCommissionOrder(
                     key_crm_id=f'{prom_order.order_id}_oc',  # oc = order commission
@@ -302,29 +289,29 @@ def make_supplier_comission_orders(buyer_order: Order1CBuyer):
                     products=[ProductCommissionProSaleForOrder(price=prom_order.order_commission)],
                     shop=prom_order.shop,
                 )
-                process_new_supplier_order(commission_order)
-                make_postupleniye_for_commission_order(commission_order)
+                process_new_supplier_order(commission_order, session)
+                make_postupleniye_for_commission_order(commission_order, session)
 
 
-def make_postupleniye_for_commission_order(commission_order: Order1CSupplierPromCommissionOrder):
+def make_postupleniye_for_commission_order(commission_order: Order1CSupplierPromCommissionOrder, session: Session):
     postupleniye = Order1CPostupleniye(
         key_crm_id=commission_order.key_crm_id,
         parent_id=commission_order.key_crm_id,
         supplier=commission_order.supplier,
         products=commission_order.products,
     )
-    if add_order_to_db(postupleniye):
+    if add_order_to_db(postupleniye, session):
         create_json_file(postupleniye)
 
 
-def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefundQueueDB):
+def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefundOutbox, session: Session):
     return_tovarov = Order1CReturnTovarov(
         key_crm_id=str(prom_cpa_refund.order_id),
         parent_id=str(prom_cpa_refund.order_id),
         supplier=f'Просейл {prom_cpa_refund.shop}',
         products=[ProductCommissionProSale(price=prom_cpa_refund.cpa_commission)],
     )
-    if add_order_to_db(return_tovarov):
+    if add_order_to_db(return_tovarov, session):
         create_json_file(return_tovarov)
 
 
@@ -351,9 +338,9 @@ def is_prom_order_cancelled_and_has_order_commission(prom_order: PromOrderDB) ->
     return prom_order.status == PromStatus.CANCELLED and prom_order.order_commission > 0 
 
 
-def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dict) -> None:
-    with Session.begin() as session:
-        prom_order = session.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
+def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dict, session: Session) -> None:
+    with Session_Sync.begin() as session_inner:
+        prom_order = session_inner.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
         if prom_order is None:  
             return
         
@@ -369,14 +356,14 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
             order.proveden = True
             msg = f'Заказ для учёта комиссии за заказ пром и (возможно) невозвращенной комиссии по просейл по заказу {prom_order.shop}: {order.source_uuid}'
             order.manager_comment = f'{order.manager_comment}\n{msg}' if order.manager_comment else msg
-            process_new_buyer_order(order)
+            process_new_buyer_order(order, session)
             
             supplier_order = Order1CSupplier(**order_dict)
             supplier_order.products = [FakeProductSupplier()]
             supplier_order.supplier = FAKE_SUPPLIER
             supplier_order.tracking_code = TTN_SENT_BY_CAR
             supplier_order.send_sms = False
-            process_new_supplier_order(supplier_order)
+            process_new_supplier_order(supplier_order, session)
             
             commission_order = Order1CSupplierPromCommissionOrder(
                 key_crm_id=f'{prom_order.order_id}',
@@ -385,26 +372,27 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
                 products=products,
                 shop=prom_order.shop,
             )
-            process_new_supplier_order(commission_order)
-            make_postupleniye_for_commission_order(commission_order)
+            process_new_supplier_order(commission_order, session)
+            make_postupleniye_for_commission_order(commission_order, session)
 
 
 def main():
     start_time = datetime.now(timezone.utc) - timedelta(minutes=constants.CRM_MINUTES_INTERVAL_TO_CHECK)
     with redirect_stdout(rich_log.console_to_rich_log_redirector):
         crm_orders = get_interval_orders(start=start_time)
-    # crm_orders = get_interval_orders(start=datetime(year=2024, month=5, day=1, tzinfo=timezone.utc), filter_on='created') 
+    # crm_orders = get_interval_orders(start=datetime(year=2025, month=7, day=1, tzinfo=timezone.utc), filter_on='created') 
     # crm_orders = get_active_orders() + get_orders_by_stage()
     if len(crm_orders) > constants.CRM_MAX_PROCESSING_ORDERS:
         logger.error(f'Too many orders (more than {constants.CRM_MAX_PROCESSING_ORDERS}) to process in CRM')
-    process_orders(crm_orders)
-    process_cpa_refunds()
+    with Session_Sync() as session:
+        process_orders(crm_orders, session)
+        process_cpa_refunds(session)
+        process_delivery_fees(session)
 
 
-def process_orders(crm_orders: list[dict]):
-    with Session.begin() as session:
-        for order_dict in crm_orders:
-            
+def process_orders(crm_orders: list[dict], session: Session):
+    for order_dict in crm_orders:
+        with session.begin():
             try:
                 order = Order1CBuyer(**order_dict)
             except Exception as e:
@@ -412,7 +400,7 @@ def process_orders(crm_orders: list[dict]):
                     logger.error(f'Error parsing order {order_dict['id']}: {e} ')
                     parse_errors_orders_ids.append(order_dict['id'])
                 continue
-            
+
             if not is_order_proper_filled(order) and not is_order_cancelled(order):
                 continue  # skip some not properly filled orders
 
@@ -420,7 +408,7 @@ def process_orders(crm_orders: list[dict]):
                 db_order = session.query(Order1CDB).filter_by(key_crm_id=order.key_crm_id, parent_id=None).first()
                 if db_order is None:  # if order doesn't exist in db
                     if is_order_cancelled(order):
-                        check_and_process_unreturned_commission(order, order_dict)
+                        check_and_process_unreturned_commission(order, order_dict, session)
                         continue
                     # if order.prices_rounded: # uncomment when CRM fixes update
                     #     update_crm_order(order)
@@ -428,8 +416,8 @@ def process_orders(crm_orders: list[dict]):
                     tree_products = find_unique_tree_products(tree_orders)
                     extended_order = order.model_copy(deep=True)
                     extended_order.products = [ProductBuyer(**product) for product in tree_products]
-                    process_new_buyer_order(extended_order)
-                    make_supplier_comission_orders(order)   # untab this line for testing purposes
+                    process_new_buyer_order(extended_order, session)
+                    make_supplier_comission_orders(order, session)   # untab this line to process unprocessed commissions
 
             if order.supplier:   # Supplier present, this is a Supplier order or also a Supplier order
                 order = Order1CSupplier(**order_dict)
@@ -438,20 +426,43 @@ def process_orders(crm_orders: list[dict]):
                 if db_order is None:  # if order doesn't exist in db
                     root_id = find_root_order_id(order_dict, crm_orders)
                     order.parent_id = str(root_id)
-                    process_new_supplier_order(order=order)
+                    process_new_supplier_order(order=order, session=session)
                 else:  # if order exists in db
                     order = Order1CSupplierUpdate(**order_dict)
                     process_existing_supplier_order(order=order, db_order=db_order)
 
 
-def process_cpa_refunds():
-    with Session.begin() as session:
-        all_cpa_refunds = session.query(PromCPARefundQueueDB).all()
-        for cpa_refund in all_cpa_refunds:
+def process_cpa_refunds(session: Session):
+    with session.begin():
+        all_cpa_refunds = session.query(PromCPARefundOutbox).all()
+    for cpa_refund in all_cpa_refunds:
+        with session.begin():
             q = session.query(Order1CDB).filter_by(key_crm_id=str(cpa_refund.order_id)).first()
             if q is not None:
-                make_vozvrat_tovarov_for_commission_posupleniye(cpa_refund)
+                make_vozvrat_tovarov_for_commission_posupleniye(cpa_refund, session)
                 session.delete(cpa_refund)
+
+
+def process_delivery_fees(session: Session):
+    with session.begin():
+        records = session.query(PromDeliveryCommissionOutbox).all()
+    for record in records:
+        with session.begin():
+            try:
+                crm_reply = crm.get_orders(filter={"source_uuid": str(record.order_id)})[0]
+                logger.info(f'Successfully got order from CRM for {record.order_id}')
+            except Exception as e:
+                logger.error(f'Failed to get order from CRM for {record.order_id} | {str(e)}')
+                continue
+            commission_order = Order1CSupplierPromCommissionOrder(
+                key_crm_id=f'{record.order_id}_fd',  # fd = free delivery
+                parent_id=str(crm_reply['id']),
+                supplier=f'Просейл {record.shop}',
+                products=[ProductCommissionProSaleFreeDelivery(price=record.delivery_commission)],
+                shop=record.shop)
+            process_new_supplier_order(commission_order, session)
+            make_postupleniye_for_commission_order(commission_order, session)
+            session.delete(record)
 
 
 if __name__ == '__main__':

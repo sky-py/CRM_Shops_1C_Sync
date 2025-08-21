@@ -58,7 +58,7 @@ class PromOrderDB(Base):
                 f'CPA is refunded:{self.cpa_is_refunded} delivery commission:{self.delivery_commission}')
 
 
-class PromCPARefundQueueDB(Base):
+class PromCPARefundOutbox(Base):
     __tablename__ = 'prom_cpa_queue'
     order_id = Column(Integer, primary_key=True)
     shop = Column(String)
@@ -66,3 +66,13 @@ class PromCPARefundQueueDB(Base):
 
     def __repr__(self):
         return f'Order {self.order_id} Shop:{self.shop} CPA:{self.cpa_commission}'
+    
+
+class PromDeliveryCommissionOutbox(Base):
+    __tablename__ = 'prom_delivery_commission_outbox'
+    order_id = Column(Integer, primary_key=True)
+    shop = Column(String)
+    delivery_commission = Column(Float, default=0.0)
+
+    def __repr__(self):
+        return f'Order {self.order_id} Shop:{self.shop} CPA:{self.delivery_commission}'
