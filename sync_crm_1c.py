@@ -267,30 +267,29 @@ def process_existing_supplier_order(order: Order1CSupplierUpdate, db_order: Orde
 
 
 def make_supplier_comission_orders(buyer_order: Order1CBuyer, session: Session):
-    with Session_Sync.begin() as session_inner:
-        prom_order = session_inner.query(PromOrderDB).filter_by(order_id=buyer_order.source_uuid).first()
-        if prom_order is not None:  # if order at Prom orders
-            if prom_order.cpa_commission > 0:  # if order has CPA commission
-                commission_order = Order1CSupplierPromCommissionOrder(
-                    key_crm_id=f'{prom_order.order_id}',
-                    parent_id=buyer_order.key_crm_id,
-                    supplier=f'Просейл {prom_order.shop}',
-                    products=[ProductCommissionProSale(price=prom_order.cpa_commission)],
-                    shop=prom_order.shop,
-                )
-                process_new_supplier_order(commission_order, session)
-                make_postupleniye_for_commission_order(commission_order, session)
+    prom_order = session.query(PromOrderDB).filter_by(order_id=buyer_order.source_uuid).first()
+    if prom_order is not None:  # if order at Prom orders
+        if prom_order.cpa_commission > 0:  # if order has CPA commission
+            commission_order = Order1CSupplierPromCommissionOrder(
+                key_crm_id=f'{prom_order.order_id}',
+                parent_id=buyer_order.key_crm_id,
+                supplier=f'Просейл {prom_order.shop}',
+                products=[ProductCommissionProSale(price=prom_order.cpa_commission)],
+                shop=prom_order.shop,
+            )
+            process_new_supplier_order(commission_order, session)
+            make_postupleniye_for_commission_order(commission_order, session)
 
-            if prom_order.order_commission > 0:  # if order has order commission
-                commission_order = Order1CSupplierPromCommissionOrder(
-                    key_crm_id=f'{prom_order.order_id}_oc',  # oc = order commission
-                    parent_id=buyer_order.key_crm_id,
-                    supplier=f'Просейл {prom_order.shop}',
-                    products=[ProductCommissionProSaleForOrder(price=prom_order.order_commission)],
-                    shop=prom_order.shop,
-                )
-                process_new_supplier_order(commission_order, session)
-                make_postupleniye_for_commission_order(commission_order, session)
+        if prom_order.order_commission > 0:  # if order has order commission
+            commission_order = Order1CSupplierPromCommissionOrder(
+                key_crm_id=f'{prom_order.order_id}_oc',  # oc = order commission
+                parent_id=buyer_order.key_crm_id,
+                supplier=f'Просейл {prom_order.shop}',
+                products=[ProductCommissionProSaleForOrder(price=prom_order.order_commission)],
+                shop=prom_order.shop,
+            )
+            process_new_supplier_order(commission_order, session)
+            make_postupleniye_for_commission_order(commission_order, session)
 
 
 def make_postupleniye_for_commission_order(commission_order: Order1CSupplierPromCommissionOrder, session: Session):
@@ -339,41 +338,40 @@ def is_prom_order_cancelled_and_has_order_commission(prom_order: PromOrderDB) ->
 
 
 def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dict, session: Session) -> None:
-    with Session_Sync.begin() as session_inner:
-        prom_order = session_inner.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
-        if prom_order is None:  
-            return
+    prom_order = session.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
+    if prom_order is None:  
+        return
         
-        products = []
-        if is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order):
-            products.append(ProductCommissionProSale(price=prom_order.cpa_commission))
-        if is_prom_order_cancelled_and_has_order_commission(prom_order):
-            products.append(ProductCommissionProSaleForOrder(price=prom_order.order_commission))
-            
-        if products:   
-            logger.info(f'Start processing unreturned CPA commission or order commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})')
-            order.products = [FakeProductBuyer()]
-            order.proveden = True
-            msg = f'Заказ для учёта комиссии за заказ пром и (возможно) невозвращенной комиссии по просейл по заказу {prom_order.shop}: {order.source_uuid}'
-            order.manager_comment = f'{order.manager_comment}\n{msg}' if order.manager_comment else msg
-            process_new_buyer_order(order, session)
-            
-            supplier_order = Order1CSupplier(**order_dict)
-            supplier_order.products = [FakeProductSupplier()]
-            supplier_order.supplier = FAKE_SUPPLIER
-            supplier_order.tracking_code = TTN_SENT_BY_CAR
-            supplier_order.send_sms = False
-            process_new_supplier_order(supplier_order, session)
-            
-            commission_order = Order1CSupplierPromCommissionOrder(
-                key_crm_id=f'{prom_order.order_id}',
-                parent_id=order.key_crm_id,
-                supplier=f'Просейл {prom_order.shop}',
-                products=products,
-                shop=prom_order.shop,
-            )
-            process_new_supplier_order(commission_order, session)
-            make_postupleniye_for_commission_order(commission_order, session)
+    products = []
+    if is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order):
+        products.append(ProductCommissionProSale(price=prom_order.cpa_commission))
+    if is_prom_order_cancelled_and_has_order_commission(prom_order):
+        products.append(ProductCommissionProSaleForOrder(price=prom_order.order_commission))
+        
+    if products:   
+        logger.info(f'Start processing unreturned CPA commission or order commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})')
+        order.products = [FakeProductBuyer()]
+        order.proveden = True
+        msg = f'Заказ для учёта комиссии за заказ пром и (возможно) невозвращенной комиссии по просейл по заказу {prom_order.shop}: {order.source_uuid}'
+        order.manager_comment = f'{order.manager_comment}\n{msg}' if order.manager_comment else msg
+        process_new_buyer_order(order, session)
+        
+        supplier_order = Order1CSupplier(**order_dict)
+        supplier_order.products = [FakeProductSupplier()]
+        supplier_order.supplier = FAKE_SUPPLIER
+        supplier_order.tracking_code = TTN_SENT_BY_CAR
+        supplier_order.send_sms = False
+        process_new_supplier_order(supplier_order, session)
+        
+        commission_order = Order1CSupplierPromCommissionOrder(
+            key_crm_id=f'{prom_order.order_id}',
+            parent_id=order.key_crm_id,
+            supplier=f'Просейл {prom_order.shop}',
+            products=products,
+            shop=prom_order.shop,
+        )
+        process_new_supplier_order(commission_order, session)
+        make_postupleniye_for_commission_order(commission_order, session)
 
 
 def main():
