@@ -1,9 +1,17 @@
 from typing import Optional
-from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
-from parse.parse_constants import *
 from common_funcs import international_phone
+from parse.parse_constants import (
+    Status,
+    get_key_by_value,
+    manager_insales_to_db,
+    manager_key_to_db,
+    payment_insales_to_crm_id,
+    status_insales_to_db,
+)
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MAX_TEXT_LENGTH = 245
+
 
 class Client(BaseModel):
     id: int = Field(exclude=True)
@@ -15,9 +23,7 @@ class Client(BaseModel):
     phone: Optional[str] = Field(default=None)
     bonus_points: int = Field(default=0, exclude=True)
 
-    model_config = {
-        'str_strip_whitespace': True
-    }
+    model_config = {'str_strip_whitespace': True}
 
     # @model_validator(mode='before')
     # def concatanate(cls, model):
@@ -36,9 +42,7 @@ class Product(BaseModel):
     price: float = Field(default=0, alias='sale_price')
     quantity: int
 
-    model_config = ConfigDict(
-        str_strip_whitespace=True
-    )
+    model_config = ConfigDict(str_strip_whitespace=True)
 
 
 class Shipping(BaseModel):
@@ -100,7 +104,7 @@ class OrderInsales(BaseModel):
 
         model['fulfillment_status'] = status_insales_to_db.get(model['fulfillment_status'], Status.CANCELLED).value
 
-        payment = dict()
+        payment = {}
         payment['payment_method_id'] = payment_insales_to_crm_id.get(model['payment_title'], 5)
         payment['amount'] = model['total_price']
         payment['status'] = 'paid' if model.get('financial_status') else 'not_paid'
@@ -109,11 +113,12 @@ class OrderInsales(BaseModel):
         model['client']['name'] = process_names(model['shipping_address']['name'])
         model['client']['surname'] = process_names(model['shipping_address']['surname'])
         model['client']['middlename'] = process_names(model['shipping_address']['middlename'])
-        model['client']['full_name'] = f"{model['client']['surname']} {model['client']['name']} {model['client']['middlename']}"
+        model['client']['full_name'] = (
+            f'{model["client"]["surname"]} {model["client"]["name"]} {model["client"]["middlename"]}'
+        )
 
         return model
 
     @field_validator('ordered_at')
     def format_date(cls, value):
         return value.split('.')[0].replace('T', ' ')
-

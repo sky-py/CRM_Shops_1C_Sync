@@ -3,6 +3,8 @@ from common_funcs import international_phone
 from parse.parse_constants import (
     Document1C,
     Status,
+    Shops,
+    PaymentStatus,
     manager_key_to_1c,
     manager_key_to_db,
     payment_crm_id_to_1c,
@@ -180,10 +182,22 @@ class Order1CBuyer(BaseModel):
                         model['tracking_code'] = TTN_SENT_BY_CAR
 
         paid_by_card = False
+        payment_name_paid_by_card, payment_name_paid, payment_name_not_paid = None, None, None
         for payment in model.get('payments', []):
-            payment_name = payment_crm_id_to_1c.get(payment['payment_method_id'])
-            if payment['status'] == 'paid' and payment_name in paid_by_card_methods:
-                paid_by_card = True
+            p_name = payment_crm_id_to_1c.get(payment['payment_method_id'])
+            if payment['status'] == PaymentStatus.PAID:
+                if p_name in paid_by_card_methods:
+                    paid_by_card = True
+                    payment_name_paid_by_card = p_name
+                else:
+                    payment_name_paid = p_name
+            else:
+                payment_name_not_paid = p_name
+         
+        if (model['shop'] in [Shops.UKRSTIL.value, Shops.BEAUTY_MARKET.value, Shops.KRASUNIA.value] and
+            payment_name_not_paid in paid_by_card_methods):
+                payment_name_not_paid = None
+        model['payment'] = (payment_name_paid_by_card or payment_name_paid or payment_name_not_paid)
 
         if not paid_by_card:
             for product in model['products']:
@@ -194,9 +208,6 @@ class Order1CBuyer(BaseModel):
                     else:
                         product['price_sold'] = classic_round(product['price_sold'] * quantity) / quantity
                     model['prices_rounded'] = True
-
-        if model['payments']:
-            model['payment'] = payment_crm_id_to_1c.get(model['payments'][0]['payment_method_id'], None) # 1st payment name
 
         return model
 

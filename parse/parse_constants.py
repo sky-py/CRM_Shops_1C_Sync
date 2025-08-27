@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, StrEnum
 
 ukrsalon_crm_id = 10  # Ідентифікатор джерела Укрсалон
 insta_ukrsalon_crm_id = 5  # Ідентифікатор джерела Инстаграм Укрсалон
@@ -27,6 +27,11 @@ class PromStatus(Enum):
     DRAFT = 'Draft'
     OTHER = 'Other'
     DISPATCHED = 'Dispatched'
+    
+    
+class PaymentStatus(StrEnum):
+    PAID = 'paid'
+    NOT_PAID = 'not_paid'
 
 
 class Shops(Enum):
@@ -208,7 +213,7 @@ payment_crm_id_to_1c = {
     36: 'WayForPay',
 }
 
-paid_by_card_methods = ['Промоплата', 'Ликпей']
+paid_by_card_methods = ['Промоплата', 'Ликпей', 'WayForPay']
 
 
 def get_key_by_value(mdict: dict, val):
