@@ -140,7 +140,8 @@ async def process_orders(orders: list, shop_name: str, color: str):
                 if order_dict['id'] not in bad_orders:
                     logger.error(f'Problem with {shop_name} - order: {order_dict["id"]} {e}')
                     bad_orders.append(order_dict['id'])
-            await process_one_order(order, session)
+            else:
+                await process_one_order(order, session)
 
 
 def order_was_accepted(order, order_db) -> bool:
