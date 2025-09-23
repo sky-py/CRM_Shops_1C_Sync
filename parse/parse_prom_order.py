@@ -66,7 +66,7 @@ class OrderProm(BaseModel):
         model['price'] = get_price(model['price']) if model.get('price') else 0
 
         model['cpa_is_refunded'] = bool(model.get('cpa_commission') and model.get('cpa_commission').get('is_refunded'))
-        model['cpa_commission'] = float(model.get('cpa_commission', {}).get('amount', 0))
+        model['cpa_commission'] = float(model.get('cpa_commission').get('amount', 0)) if model.get('cpa_commission') else 0
 
         if prosale_commission := model.get('prosale_commission'):
             if prosale_commission['type'] == 2:
