@@ -79,7 +79,12 @@ class OrderProm(BaseModel):
                 for condition in model['ps_promotion']['conditions']:
                     match = re.search(r'([\d.]+).?грн.{0,4}продавец', condition, re.DOTALL)
                     if match:
-                        model['delivery_commision'] = float(match.group(1))  # type: ignore
+                        if model['price'] >= 700:
+                            model['delivery_commision'] = float(match.group(1))
+                        elif model['price'] >= 200:
+                            model['delivery_commision'] = 10
+                        else:
+                            model['delivery_commision'] = 0
                         break
                 else:
                     raise Exception(f'Promo free delivery conditions not found at order {model["id"]}')
