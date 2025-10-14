@@ -75,7 +75,7 @@ def process_request():
         logger.debug(f'Got CRM webhook data: {data}')
     
     try:
-        key_order = OrderKeyCrmShort(**request.json)
+        key_order = OrderKeyCrmShort(**data)
     except Exception as e:
         send_service_tg_message(f"ERROR parsing key_crm webhook data {__file__}\n{str(e)}")
         raise
