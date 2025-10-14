@@ -18,6 +18,7 @@ CRM_ORDER_COMPLETED_STAGE_ID = 12
 CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
 
 UKRSALON_URL = os.getenv('UKRSALON_URL')
+CALLBACK_CRM_PORT = int(os.getenv('CALLBACK_CRM_PORT'))
 
 # ================================================= TELEGRAM =============================================
 tg_token = os.getenv('tg_token_salon')
