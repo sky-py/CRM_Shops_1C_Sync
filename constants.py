@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from parse.parse_constants import Shops
+from pathlib import Path
 
 
 load_dotenv('/etc/env/tg.env')
@@ -40,8 +41,8 @@ managers_plus = [*managers, director_tg, rop_tg]
 time_to_sleep_insales_crm = 5   # sec
 time_to_sleep_crm_1c = 40   # sec
 
-json_orders_for_1c_path = 'C:/Obmen/CRM/IN'
-json_archive_1C_path = os.getenv('json_archive_1C_path')
+jsons_out_path = Path('C:/Obmen/CRM/IN')
+archive_path = Path(os.getenv('backup_root_path')) / 'Backup_Json'
 
 # ================================================= PROM =============================================
 

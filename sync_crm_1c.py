@@ -1,5 +1,4 @@
 import json
-import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Literal
@@ -37,8 +36,8 @@ rich_log = RichLog(header=f'Синхронизация CRM с 1С       {__file_
 
 parse_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
-Path(constants.json_orders_for_1c_path).mkdir(parents=True, exist_ok=True)
-Path(constants.json_archive_1C_path).mkdir(parents=True, exist_ok=True)
+constants.jsons_out_path.mkdir(parents=True, exist_ok=True)
+constants.archive_path.mkdir(parents=True, exist_ok=True)
 
 logger.remove()
 logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
@@ -128,8 +127,8 @@ def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | 
     text = json.dumps(order.model_dump(mode='json', include=include_keys, exclude=exclude_keys),
                       ensure_ascii=False, indent=4)
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
-    (Path(constants.json_orders_for_1c_path) / json_file).write_text(data=text, encoding='utf-8')
-    shutil.copyfile((Path(constants.json_orders_for_1c_path) / json_file), (Path(constants.json_archive_1C_path) / json_file))
+    (constants.archive_path / json_file).write_text(data=text, encoding='utf-8')
+    (constants.jsons_out_path / json_file).write_text(data=text, encoding='utf-8')
     logger.info(f'Created JSON file: {json_file} for order: {order.key_crm_id} type: {order.document_type.value}')
 
 
