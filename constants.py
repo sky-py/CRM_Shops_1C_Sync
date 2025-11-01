@@ -42,7 +42,7 @@ time_to_sleep_insales_crm = 5   # sec
 time_to_sleep_crm_1c = 40   # sec
 
 jsons_out_path = Path('C:/Obmen/CRM/IN')
-archive_path = Path(os.getenv('backup_root_path')) / 'Backup_Json'
+jsons_archive_path = Path(os.getenv('backup_root_path')) / 'Backup_Json'
 
 # ================================================= PROM =============================================
 

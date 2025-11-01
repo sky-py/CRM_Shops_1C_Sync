@@ -37,7 +37,7 @@ rich_log = RichLog(header=f'Синхронизация CRM с 1С       {__file_
 parse_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
 constants.jsons_out_path.mkdir(parents=True, exist_ok=True)
-constants.archive_path.mkdir(parents=True, exist_ok=True)
+constants.jsons_archive_path.mkdir(parents=True, exist_ok=True)
 
 logger.remove()
 logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
@@ -127,7 +127,7 @@ def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | 
     text = json.dumps(order.model_dump(mode='json', include=include_keys, exclude=exclude_keys),
                       ensure_ascii=False, indent=4)
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
-    (constants.archive_path / json_file).write_text(data=text, encoding='utf-8')
+    (constants.jsons_archive_path / json_file).write_text(data=text, encoding='utf-8')
     (constants.jsons_out_path / json_file).write_text(data=text, encoding='utf-8')
     logger.info(f'Created JSON file: {json_file} for order: {order.key_crm_id} type: {order.document_type.value}')
 
