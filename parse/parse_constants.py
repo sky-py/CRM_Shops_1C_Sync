@@ -85,6 +85,11 @@ manager_key_to_db = {    # TODO 2
     17: 7,    # Lilia
     18: 8,    # Galina
     22: 9,    # Ilona
+    28: 10,    # Olga
+    26: 11,    # Oksana
+    27: 12,    # Alexandra
+    24: 13,    # Svetlana
+    2: 14,    # Sergey
 }
 
 
