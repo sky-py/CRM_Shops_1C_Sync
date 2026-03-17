@@ -95,13 +95,18 @@ def main() -> None:
                     continue
                 set_order_shop(order)
                 crm_reply = crm.new_order(order.model_dump())
-                if crm_reply.get('errors', {}).get('source_uuid', [''])[0] == 'The source uuid has already been taken.':
-                    logger.info(f'Error inserting order {order.source_uuid} to CRM: The source uuid has already been taken. Trying to get order from CRM...')
-                    try:
-                        crm_reply = crm.get_orders(filter={"source_uuid": order_dict['number']})[0]
-                        logger.info(f'Successfully got id {order.source_uuid} from CRM')
-                    except:
-                        logger.error(f'Error getting id {order.source_uuid} from CRM => {crm_reply}')
+                errors = crm_reply.get('errors', {})
+                if errors:
+                    if errors.get('source_uuid', [''])[0] == 'The source uuid has already been taken.':
+                        logger.info(f'Error inserting order {order.source_uuid} to CRM: The source uuid has already been taken. Trying to get order from CRM...')
+                        try:
+                            crm_reply = crm.get_orders(filter={"source_uuid": order_dict['number']})[0]
+                            logger.info(f'Successfully got id {order.source_uuid} from CRM')
+                        except:
+                            logger.error(f'Error getting id {order.source_uuid} from CRM => {crm_reply}')
+                    else:
+                        logger.error(f'Got unknown error from CRM for order {order_dict['number']} {errors}')
+                        continue
                 session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,
                                             insales_id=order.insales_id,
                                             key_crm_id=crm_reply['id'],
@@ -135,6 +140,6 @@ if __name__ == '__main__':
                 exit(0)
             rich_log.sleep(constants.time_to_sleep_insales_crm)
     except Exception as e:
-        logger.error(f'Error in {__file__}: {e}')
+        logger.exception(f'Error in {__file__}: {e}')
     finally:
         rich_log.stop()
