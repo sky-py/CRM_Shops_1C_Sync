@@ -67,7 +67,7 @@ status_horoshop_to_db = {
 }
 
 manager_insales_to_db = {   # TODO 1
-    798545: 9,   # Ilona
+    798545: 12,   # Alexandra
     192279: 2,   # Vika
     1245660: 3,  # Natasha
     1252475: 4,  # Lida

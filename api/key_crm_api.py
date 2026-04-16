@@ -5,8 +5,8 @@ from enum import StrEnum
 
 REQUEST_TIMEOUT = 20
 REQUESTS_EXCEEDED_TIME_TO_SLEEP = 10
-results_per_page = 50
-include_order_fields = 'buyer,manager,products.offer,shipping.deliveryService,custom_fields,payments'
+RESULTS_PER_PAGE = 50
+INCLUDE_ORDER_FIELDS = 'buyer,manager,products.offer,shipping.deliveryService,custom_fields,payments'
 
 
 class Method(StrEnum):
@@ -20,6 +20,7 @@ class Route(StrEnum):
     STAGE = '/order/status'
     PAYMENT_METHODS = '/order/payment-method'
     OFFERS = '/offers'
+    PRODUCTS = '/products'
 
 
 class KeyCRM:
@@ -32,8 +33,8 @@ class KeyCRM:
                         'Authorization': f'Bearer {api_key}'
                         }
 
-    def parce_validate_response(self, r: requests.Response) -> dict:
-        # r.raise_for_status()
+    def parse_and_validate_response(self, r: requests.Response) -> dict:
+        r.raise_for_status()
         remaining_limits = r.headers.get('X-Ratelimit-Remaining')
         print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
         if remaining_limits:
@@ -54,17 +55,17 @@ class KeyCRM:
             case _:
                 raise Exception('Unknown method')
 
-        return self.parce_validate_response(r)
+        return self.parse_and_validate_response(r)
 
-    def get_orders(self, last_orders_amount=results_per_page, filter: dict = None) -> list[dict]:
+    def get_orders(self, last_orders_amount=RESULTS_PER_PAGE, filter: dict = None) -> list[dict]:
         """
         Returns list of orders dicts
         :param last_orders_amount: 0 meens ALL
         :param filter: dictionary of filters
         :return: list of orders dicts
         """
-        params = {'limit': results_per_page,
-                  'include': include_order_fields,
+        params = {'limit': RESULTS_PER_PAGE,
+                  'include': INCLUDE_ORDER_FIELDS,
                   }
 
         if filter is not None:
@@ -76,7 +77,7 @@ class KeyCRM:
         if last_orders_amount == 0:
             pages = data['last_page']
         else:
-            pages = last_orders_amount // results_per_page + (last_orders_amount % results_per_page > 0)
+            pages = last_orders_amount // RESULTS_PER_PAGE + (last_orders_amount % RESULTS_PER_PAGE > 0)
 
         orders = data['data']
         if pages == 1:  # all orders on one page, no need to fetch more pages
@@ -89,7 +90,7 @@ class KeyCRM:
             return orders
 
     def get_order(self, order_id: int | str) -> dict:
-        return self.make_request(Method.GET, f'{Route.ORDER}/{order_id}', params={'include': include_order_fields})
+        return self.make_request(Method.GET, f'{Route.ORDER}/{order_id}', params={'include': INCLUDE_ORDER_FIELDS})
 
     def new_order(self, data: dict) -> dict:
         return self.make_request(Method.POST, Route.ORDER, json_data=data)
@@ -98,14 +99,20 @@ class KeyCRM:
         return self.make_request(Method.PUT, f'{Route.ORDER}/{order_id}', json_data=data)
 
     def get_stages(self) -> dict:
-        return self.make_request(Method.GET, Route.STAGE, params={'limit': results_per_page})
+        return self.make_request(Method.GET, Route.STAGE, params={'limit': RESULTS_PER_PAGE})
 
     def get_pay_methods(self) -> dict:
-        return self.make_request(Method.GET, Route.PAYMENT_METHODS, params={'limit': results_per_page})
+        return self.make_request(Method.GET, Route.PAYMENT_METHODS, params={'limit': RESULTS_PER_PAGE})
 
     def get_offers(self) -> dict:
-        return self.make_request(Method.GET, Route.OFFERS, params={'limit': results_per_page,
+        return self.make_request(Method.GET, Route.OFFERS, params={'limit': RESULTS_PER_PAGE,
                                                                          'include': 'product'})
+
+    def get_product(self, product_id: int | str) -> dict:
+        return self.make_request(Method.GET, f'{Route.PRODUCTS}/{product_id}')
+
+    def update_product(self, product_id: int | str, data: dict) -> dict:
+        return self.make_request(Method.PUT, f'{Route.PRODUCTS}/{product_id}', json_data=data)
 
     def get_order_by_source_uuid(self, source_uuid: str) -> dict:
         orders = self.get_orders(last_orders_amount=1000)
