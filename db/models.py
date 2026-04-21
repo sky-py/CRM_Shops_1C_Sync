@@ -20,7 +20,7 @@ class UkrsalonOrderDB(Base):
     is_accepted = Column(Boolean, default=False)
     claimed_by_name = Column(String, nullable=True, default=None)
     claimed_at = Column(DateTime, nullable=True, default=None)
-    insales_id = Column(Integer)
+    insales_id = Column(Integer, unique=True)
     json = Column(JSONB)
 
     def __repr__(self):

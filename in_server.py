@@ -112,7 +112,7 @@ def process_ukrsalon_orders():
         send_service_tg_message(f"ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}")
         raise
     else:
-        logger.debug(f'Got ukrsalon_orders webhook data: {data}')
+        logger.debug(f'Got Ukrsalon order {data['number']}')
 
     with Session_Sync.begin() as session:
         notification = process_order(data, session)

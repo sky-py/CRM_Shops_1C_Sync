@@ -9,6 +9,7 @@ from parse.parse_constants import Status, ukrsalon_crm_id, insta_ukrsalon_crm_id
 from telegram.sender_sync import send_service_tg_message
 from loguru import logger
 from pathlib import Path
+from sqlalchemy.exc import IntegrityError
 from telegram.sender import send_notification
 from telegram.types import Notification
 from tools.rich_log import RichLog
@@ -56,7 +57,7 @@ def generate_message_text(order: OrderInsales, key_crm_id: int) -> str:
                  f'Телефон: {order.buyer.phone}\n')
     if order.status_id == Status.NEW.value:
         send_text += f'Админка: https://ukrsalon.com.ua/admin2/orders/{order.insales_id}\n'
-                      # f'CRM: https://ukrsalon.keycrm.app/app/orders/view/{key_crm_id}')
+        # f'CRM: https://ukrsalon.keycrm.app/app/orders/view/{key_crm_id}')
     return send_text
 
 
@@ -102,7 +103,7 @@ def get_orders() -> list[dict]:
 
 
 def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales, int] | None:
-    q = session.query(UkrsalonOrderDB).filter_by(source_uuid=order_dict['number']).first()
+    q = session.query(UkrsalonOrderDB).filter_by(insales_id=order_dict['id']).first()
     if q is None:  # order not found in db
         try:
             order = OrderInsales(**order_dict)
@@ -125,17 +126,23 @@ def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales
             else:
                 logger.error(f'Got unknown error from CRM for order {order_dict['number']} {errors}')
                 return None
-        session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,
-                                    insales_id=order.insales_id,
-                                    key_crm_id=crm_reply['id'],
-                                    ordered_at=order.ordered_at,
-                                    total_price=order.total_price,
-                                    manager_id=order.manager_DB,
-                                    status_id=order.status_id,
-                                    is_paid=order.is_paid,
-                                    is_accepted=False if order.status_id == Status.NEW.value else True,
-                                    json=order_dict
-                                    ))
+        try:
+            with session.begin_nested():
+                session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,
+                                            insales_id=order.insales_id,
+                                            key_crm_id=crm_reply['id'],
+                                            ordered_at=order.ordered_at,
+                                            total_price=order.total_price,
+                                            manager_id=order.manager_DB,
+                                            status_id=order.status_id,
+                                            is_paid=order.is_paid,
+                                            is_accepted=False if order.status_id == Status.NEW.value else True,
+                                            json=order_dict
+                                            ))
+                session.flush()
+        except IntegrityError:
+            logger.info(f'Order {order.insales_id} already inserted concurrently. Skipping duplicate insert.')
+            return None
         update_order_backoffice(order)
         update_client_backoffice(order)
         return order, crm_reply['id']

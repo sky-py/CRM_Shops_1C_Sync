@@ -2,6 +2,7 @@ ALTER TABLE prom_orders ADD COLUMN claimed_by_name varchar DEFAULT NULL;
 ALTER TABLE prom_orders ADD COLUMN claimed_at timestamp DEFAULT NULL;
 ALTER TABLE ukrsalon_orders ADD COLUMN claimed_by_name varchar DEFAULT NULL;
 ALTER TABLE ukrsalon_orders ADD COLUMN claimed_at timestamp DEFAULT NULL;
+ALTER TABLE ukrsalon_orders ADD CONSTRAINT ukrsalon_orders_insales_id_key UNIQUE (insales_id);
 
 
 -- ALTER TABLE prom_orders ADD COLUMN delivery_commission float8 DEFAULT 0.0;
