@@ -7,11 +7,12 @@ from db.models import UkrsalonOrderDB
 from api.insales_api import Insales
 import constants
 from parse.parse_constants import *
-from messengers import send_service_tg_message
+from telegram.sender_sync import send_service_tg_message
 from werkzeug.exceptions import HTTPException
 from loguru import logger
 from pathlib import Path
 from retry import retry
+from sync_ukrsalon_crm import process_order, send_message
 
 
 app = Flask(__name__)
@@ -99,6 +100,25 @@ def process_request():
 
         else:
             logger.info(f'not found in DB order {key_order.key_crm_id}')
+
+    return {'message': 'ok'}, 200
+
+
+@app.route('/ukrsalon_orders', methods=['POST'])
+def process_ukrsalon_orders():
+    try:
+        data = request.json
+    except Exception as e:
+        send_service_tg_message(f"ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}")
+        raise
+    else:
+        logger.debug(f'Got ukrsalon_orders webhook data: {data}')
+
+    with Session_Sync.begin() as session:
+        notification = process_order(data, session)
+
+    if notification is not None and notification[0].status_id != Status.CANCELLED.value:
+        send_message(*notification)
 
     return {'message': 'ok'}, 200
 

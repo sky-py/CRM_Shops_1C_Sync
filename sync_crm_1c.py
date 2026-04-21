@@ -10,7 +10,7 @@ from db.db_init import Session_Sync, Session
 from db.models import Order1CDB, PromCPARefundOutbox, PromOrderDB, PromDeliveryCommissionOutbox
 from db.sql_init import add_ttn_to_db
 from loguru import logger
-from messengers import send_service_tg_message
+from telegram.sender_sync import send_service_tg_message
 from parse.ai import ai_reorder_names
 from parse.parse_key_crm_order import (
     Order1CBuyer,

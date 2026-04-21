@@ -8,6 +8,7 @@ python-dotenv
 psycopg2
 asyncpg
 httpx
+aiogram
 colorama
 blessed
 openai

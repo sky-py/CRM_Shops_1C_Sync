@@ -13,9 +13,11 @@ import constants
 from api.horoshop_api_async import HoroshopClient
 from db.db_init_async import Session_async, create_tables
 from db.models import PromOrderDB
-from messengers import send_service_tg_message, send_tg_message
+from telegram.sender_sync import send_service_tg_message
 from parse.parse_constants import PromStatus
 from parse.horoshop_models import OrderHoroshop
+from telegram.sender import send_notification
+from telegram.types import Notification
 
 
 colorama.init()
@@ -27,9 +29,17 @@ logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-
            level='ERROR')
 
 
-def send_message(order):
+def send_message(order) -> None:
     message_text = generate_message_text(order)
-    send_tg_message(message_text, *constants.managers_plus)
+    send_notification(
+        Notification(
+            source='prom',
+            order_id=order.order_id,
+            shop_name=order.shop,
+            text=message_text,
+            button=True  # order.status == PromStatus.NEW,
+        )
+    )
     logger.info(message_text.replace('\n', ' '))
 
 
@@ -38,9 +48,9 @@ def generate_message_text(order: OrderHoroshop):
         case PromStatus.NEW:
             state = 'НОВЫЙ'
         case _:
-            state = 'Принят'
+            state = 'НОВЫЙ'  # 'Принят'
 
-    send_text = (f'{state} заказ {order.order_id} на {order.shop}\n'   
+    send_text = (f'{state} заказ {order.order_id} на {order.shop}\n'
                  f'Сумма: {order.total_price} грн.\n'
                  f'Клиент: {order.buyer.full_name} \n'
                  f'Телефон: {order.buyer.phone}')
@@ -90,34 +100,39 @@ async def worker(shop: dict):
 
 
 async def process_orders(orders: list, shop_name: str, color: str):
+    notifications = []
     async with Session_async() as session:
         async with session.begin():
             for order_dict in orders:
                 try:
                     order = OrderHoroshop(**order_dict)
                     order.shop = shop_name
-                    await process_one_order(order, session, color)
+                    notifications.extend(await process_one_order(order, session, color))
                 except:
                     if order_dict['order_id'] not in bad_orders:
-                        logger.error(f'Problem with {shop_name} - order: {order_dict['id']}')
+                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]}')
                         bad_orders.append(order_dict['order_id'])
                     else:
                         pass
+    for order in notifications:
+        send_message(order)
 
 
 async def process_one_order(order: OrderHoroshop, session: Session_async, color: str):
+    notifications = []
     result = await session.execute(select(PromOrderDB).filter_by(order_id=order.order_id))
     order_db = result.scalars().first()
     if order_db is None:  # order is new
         await add_order_to_db(order, session)
-        send_message(order)
+        notifications.append(order)
     else:
         if not order_db.is_accepted and order.status not in [PromStatus.NEW]:
             order_db.is_accepted = True
-            send_message(order)
+            # notifications.append(order)
 
         if order.status != order_db.status:
             order_db.status = order.status
+    return notifications
 
 
 async def main():
@@ -132,8 +147,3 @@ if __name__ == '__main__':
     if platform.system() == 'Windows':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())
-
-
-
-
-

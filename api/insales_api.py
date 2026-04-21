@@ -2,12 +2,12 @@ import time
 from enum import Enum
 import requests
 import json
+from retry import retry
 
 
-REQUEST_TIMEOUT = 20
-REQUESTS_EXCEEDED_TIME_TO_SLEEP = 30
-results_per_page = 500
-orders_per_page = 100
+REQUEST_TIMEOUT = (3, 10)
+REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP = 30
+ORDERS_PER_PAGE = 20
 
 
 class Method(Enum):
@@ -22,6 +22,9 @@ class Route(Enum):
     ONE_ORDER = "/orders/{order_id}.json"
     CLIENT = "/clients/{client_id}.json"
     CHANGE_BONUSES = "/clients/{client_id}/bonus_system_transactions.json"
+    GET_WEBHOOKS = "/webhooks.json"
+    ONE_WEBHOOK = "/webhooks/{webhook_id}.json"
+    WAREHOUSES = "/warehouses.json"
 
 
 product = "/admin/products/"
@@ -43,8 +46,8 @@ def wait(func):
             if remaining_limits:
                 remain, capacity = remaining_limits.split('/')
                 if int(remain) / int(capacity) > 0.95:
-                    print(f'Exceeded limits, waiting {REQUESTS_EXCEEDED_TIME_TO_SLEEP} sec...')
-                    time.sleep(REQUESTS_EXCEEDED_TIME_TO_SLEEP)
+                    print(f'Exceeded limits, waiting {REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP} sec...')
+                    time.sleep(REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP)
             return return_value
     return wrapper
 
@@ -56,6 +59,7 @@ class Insales:
         self.main_url = main_url + '/admin'
 
     @wait
+    @retry(stop_after_delay=300)
     def make_request(self, method: Method, route: str, params=None, data=None) -> requests.Response:
         if params is None:
             params = {}
@@ -63,15 +67,19 @@ class Insales:
             data = {}
         url = self.main_url + route
         match method:
-            case Method.GET: r = requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
-            case Method.PUT: r = requests.put(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.POST: r = requests.post(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.DELETE: r = requests.delete(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+            case Method.GET:
+                r = requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
+            case Method.PUT:
+                r = requests.put(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+            case Method.POST:
+                r = requests.post(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+            case Method.DELETE:
+                r = requests.delete(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
         r.raise_for_status()
         return r
 
     def get_orders(self, page=1) -> requests.Response:
-        params = {'per_page': orders_per_page, 'page': page}
+        params = {'per_page': ORDERS_PER_PAGE, 'page': page}
         return self.make_request(Method.GET, Route.GET_ORDERS.value,  params=params)
 
     def get_one_order(self, order_id: int | str) -> requests.Response:
@@ -94,6 +102,18 @@ class Insales:
             }
         }
         return self.make_request(Method.POST, Route.CHANGE_BONUSES.value.format(client_id=client_id), data=json.dumps(data))
+    
+    def get_webhooks(self) -> requests.Response:
+        return self.make_request(Method.GET, Route.GET_WEBHOOKS.value)
+    
+    def create_webhook(self, data) -> requests.Response:
+        return self.make_request(Method.POST, Route.GET_WEBHOOKS.value, data=json.dumps(data))
+    
+    def delete_webhook(self, webhook_id) -> requests.Response:
+        return self.make_request(Method.DELETE, Route.ONE_WEBHOOK.value.format(webhook_id=webhook_id))
+    
+    def get_warehouses(self) -> requests.Response:
+        return self.make_request(Method.GET, Route.WAREHOUSES.value)
 
     #
     # def get_clients(page):

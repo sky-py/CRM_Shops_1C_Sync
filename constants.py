@@ -1,55 +1,73 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 from parse.parse_constants import Shops
-from pathlib import Path
-
 
 load_dotenv('/etc/env/tg.env')
 load_dotenv('/etc/env/crm.env')
 load_dotenv('/etc/env/dev.env')
 load_dotenv('/etc/env/ai.env')
 
-IS_PRODUCTION_SERVER = True if os.getenv('IS_PRODUCTION_SERVER') == 'True' else False
 
-CRM_API_KEY = os.getenv('KEY_CRM_API_KEY')
+def get_env(var: str) -> str:
+    v = os.getenv(var)
+    if v is None:
+        raise ValueError(f'Environment variable {var} is not set')
+    return v
+
+
+IS_PRODUCTION_SERVER = True if get_env('IS_PRODUCTION_SERVER') == 'True' else False
+DO_SEND_TO_BOT = True if get_env('DO_SEND_TO_BOT') == 'True' else False
+TG_MAX_MESSAGE_LENGTH = 4096
+
+CRM_API_KEY = get_env('KEY_CRM_API_KEY')
 CRM_GET_LAST_ORDERS = 200
 CRM_MAX_PROCESSING_ORDERS = 500
 CRM_MINUTES_INTERVAL_TO_CHECK = 120
 CRM_ORDER_COMPLETED_STAGE_ID = 12
 CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
 
-UKRSALON_URL = os.getenv('UKRSALON_URL')
-CALLBACK_CRM_PORT = int(os.getenv('CALLBACK_CRM_PORT'))
+UKRSALON_URL = get_env('UKRSALON_URL')
+CALLBACK_CRM_PORT = int(get_env('CALLBACK_CRM_PORT'))
 
 # ================================================= TELEGRAM =============================================
-tg_token = os.getenv('tg_token_salon')
-tg_token_tools = os.getenv('tg_token_tools')
+tg_token_salon = get_env('tg_token_salon')
+tg_token_orders = get_env('tg_token_orders')
+tg_token_tools = get_env('tg_token_tools')
 
-admin_tg = os.getenv('admin_tg')
-director_tg = os.getenv('director_tg')
-ukrsalon_tg = os.getenv('ukrsalon_tg')
-ukrstil_tg = os.getenv('ukrstil_tg')
-beauty_tg = os.getenv('beauty_tg')
-klimazon_tg = os.getenv('klimazon_tg')
-krasunia_tg = os.getenv('krasunia_tg')
-lida_tg = os.getenv('lida_tg')
-rop_tg = os.getenv('rop_tg')
+admin_tg = int(get_env('admin_tg'))
+director_tg = int(get_env('director_tg'))
+ukrsalon_tg = int(get_env('ukrsalon_tg'))
+ukrstil_tg = int(get_env('ukrstil_tg'))
+beauty_tg = int(get_env('beauty_tg'))
+klimazon_tg = int(get_env('klimazon_tg'))
+krasunia_tg = int(get_env('krasunia_tg'))
+lida_tg = int(get_env('lida_tg'))
+rop_tg = int(get_env('rop_tg'))
 
-managers = [ukrsalon_tg, ukrstil_tg, beauty_tg, klimazon_tg, krasunia_tg, lida_tg]
-managers_plus = [*managers, director_tg, rop_tg]
+managers: dict[int, str] = {
+    ukrsalon_tg: 'УкрСалон',  # TODO: NAME
+    ukrstil_tg: 'Вика',
+    beauty_tg: 'Наталья',
+    klimazon_tg: 'Климазон',
+    krasunia_tg: 'Елена',
+    lida_tg: 'Лида',
+}
 
-time_to_sleep_insales_crm = 5   # sec
-time_to_sleep_crm_1c = 40   # sec
+additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина'}
+
+time_to_sleep_insales_crm = 5  # sec
+time_to_sleep_crm_1c = 40  # sec
 
 jsons_out_path = Path('C:/Obmen/CRM/IN')
-jsons_archive_path = Path(os.getenv('backup_root_path')) / 'Backup_Json'
+jsons_archive_path = Path(get_env('backup_root_path')) / 'Backup_Json'
 
 # ================================================= PROM =============================================
 
 prom_shops = [
-    {'name': Shops.UKRSTIL.value, 'token': os.getenv('prom_ukrstil_orders_r'), 'managers': managers_plus},
-    {'name': Shops.BEAUTY_MARKET.value, 'token': os.getenv('prom_beauty_orders_r'), 'managers': managers_plus},
-    {'name': Shops.KRASUNIA.value, 'token': os.getenv('prom_krasunia_orders_r'), 'managers': managers_plus},
+    {'name': Shops.UKRSTIL.value, 'token': get_env('prom_ukrstil_orders_r'), 'managers': managers | additional_receivers},
+    {'name': Shops.BEAUTY_MARKET.value, 'token': get_env('prom_beauty_orders_r'), 'managers': managers | additional_receivers},
+    {'name': Shops.KRASUNIA.value, 'token': get_env('prom_krasunia_orders_r'), 'managers': managers | additional_receivers},
 ]
 
 PROM_SLEEP_TIME = 5  # sec
@@ -60,11 +78,13 @@ PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days
 
 # ================================================= HOROSHOP =============================================
 horoshop_shops = [
-    {'name': Shops.KLIMAZON.value,
-     'url': 'https://klimazon.com',
-     'login': os.getenv('HOROSHOP_LOGIN'),
-     'password': os.getenv('HOROSHOP_PASSWORD'),
-     'managers': managers_plus},
+    {
+        'name': Shops.KLIMAZON.value,
+        'url': 'https://klimazon.com',
+        'login': get_env('HOROSHOP_LOGIN'),
+        'password': get_env('HOROSHOP_PASSWORD'),
+        'managers': managers | additional_receivers,
+    }
 ]
 
 HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1320  # minutes (twenty-four hours)
@@ -72,5 +92,4 @@ horoshop_sleep_time = 5  # sec
 horoshop_stop_tries_after_delay = 200  # sec
 
 # ================================================= AI =============================================
-OPENAI_UKRSALON_API_KEY = os.getenv('OPENAI_UKRSALON_API_KEY')
-
+OPENAI_UKRSALON_API_KEY = get_env('OPENAI_UKRSALON_API_KEY')

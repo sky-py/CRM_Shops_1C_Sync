@@ -1,11 +1,13 @@
 import time
 import asyncio
+import inspect
 from functools import wraps
+from loguru import logger
 
 
 def retry(stop_after_delay=None, max_tries=None, max_delay=20):
     def decorator(func):
-        if not asyncio.iscoroutinefunction(func):
+        if not inspect.iscoroutinefunction(func):
             @wraps(func)
             def sync_wrapper(*args, **kwargs):
                 nonlocal max_tries
@@ -18,6 +20,7 @@ def retry(stop_after_delay=None, max_tries=None, max_delay=20):
                     try:
                         result = func(*args, **kwargs)
                     except Exception as e:
+                        logger.info(f"{type(e).__name__} Error: {e}")
                         if (stop_after_delay and time.time() - start > stop_after_delay) or (max_tries and tries >= max_tries):
                             raise
                         else:
@@ -43,6 +46,7 @@ def retry(stop_after_delay=None, max_tries=None, max_delay=20):
                     try:
                         result = await func(*args, **kwargs)
                     except Exception as e:
+                        logger.info(f"{type(e).__name__} Error: {e}")
                         if (stop_after_delay and time.time() - start > stop_after_delay) or (max_tries and tries >= max_tries):
                             raise
                         else:

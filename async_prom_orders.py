@@ -10,11 +10,13 @@ from api.prom_api_async import PromClient
 from db.db_init_async import Session_async, create_tables, AsyncSession
 from db.models import PromCPARefundOutbox, PromOrderDB, PromDeliveryCommissionOutbox
 from loguru import logger
-from messengers import send_service_tg_message, send_tg_message
+from telegram.sender_sync import send_service_tg_message
 from parse.parse_constants import PromStatus
 from parse.parse_prom_order import OrderProm
 from retry import retry
 from sqlalchemy.future import select
+from telegram.sender import send_notification
+from telegram.types import Notification
 
 
 colorama.init()
@@ -38,7 +40,15 @@ logger.add(
 
 def send_message(order):
     message_text = generate_message_text(order)
-    send_tg_message(message_text, *constants.managers_plus)
+    send_notification(
+        Notification(
+            source='prom',
+            order_id=order.order_id,
+            shop_name=order.shop,
+            text=message_text,
+            button=True  # order.status in [PromStatus.NEW, PromStatus.PAID],
+        )
+    )
     logger.info(message_text.replace('\n', ' '))
 
 
@@ -49,7 +59,7 @@ def generate_message_text(order: OrderProm):
         case PromStatus.PAID:
             state = 'НОВЫЙ ОПЛАЧЕННЫЙ'
         case _:
-            state = 'Принят'
+            state = 'НОВЫЙ'  # 'Принят'
 
     send_text = (
         f'{state} заказ {order.order_id} на {order.shop}\n'
@@ -131,17 +141,21 @@ async def worker(shop: dict):
 
 
 async def process_orders(orders: list, shop_name: str, color: str):
+    notifications = []
     async with Session_async() as session:
-        for order_dict in orders:
-            try:
-                order = OrderProm(**order_dict)
-                order.shop = shop_name
-            except Exception as e:
-                if order_dict['id'] not in bad_orders:
-                    logger.error(f'Problem with {shop_name} - order: {order_dict["id"]} {e}')
-                    bad_orders.append(order_dict['id'])
-            else:
-                await process_one_order(order, session)
+        async with session.begin():
+            for order_dict in orders:
+                try:
+                    order = OrderProm(**order_dict)
+                    order.shop = shop_name
+                except Exception as e:
+                    if order_dict['id'] not in bad_orders:
+                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]} {e}')
+                        bad_orders.append(order_dict['id'])
+                else:
+                    notifications.extend(await process_one_order(order, session))
+    for order in notifications:
+        send_message(order)
 
 
 def order_was_accepted(order, order_db) -> bool:
@@ -179,19 +193,20 @@ def process_order_commission(order, order_db):
 
 
 async def process_one_order(order: OrderProm, session: AsyncSession):
-    async with session.begin():
-        result = await session.execute(select(PromOrderDB).filter_by(order_id=order.order_id))
-        order_db = result.scalars().first()
-        if order_db is None:
-            order_db = await add_order_to_db(order, session)
-            send_message(order)
+    notifications = []
+    result = await session.execute(select(PromOrderDB).filter_by(order_id=order.order_id))
+    order_db = result.scalars().first()
+    if order_db is None:
+        order_db = await add_order_to_db(order, session)
+        notifications.append(order)
 
-        if order_was_accepted(order, order_db):
-            send_message(order)
-        update_order_status(order, order_db)
-        await process_cpa_refund(order, order_db, session)
-        await process_delivery_commission(order, order_db, session)
-        process_order_commission(order, order_db)
+    # if order_was_accepted(order, order_db):
+    #     notifications.append(order)
+    update_order_status(order, order_db)
+    await process_cpa_refund(order, order_db, session)
+    await process_delivery_commission(order, order_db, session)
+    process_order_commission(order, order_db)
+    return notifications
 
 
 async def main():

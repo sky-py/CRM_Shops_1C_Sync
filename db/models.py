@@ -18,6 +18,8 @@ class UkrsalonOrderDB(Base):
     status_id = Column(Integer)
     is_paid = Column(Boolean, default=False)
     is_accepted = Column(Boolean, default=False)
+    claimed_by_name = Column(String, nullable=True, default=None)
+    claimed_at = Column(DateTime, nullable=True, default=None)
     insales_id = Column(Integer)
     json = Column(JSONB)
 
@@ -46,6 +48,8 @@ class PromOrderDB(Base):
     status = Column(Enum(PromStatus), nullable=False)
     shop = Column(String)
     is_accepted = Column(Boolean, default=False)
+    claimed_by_name = Column(String, nullable=True, default=None)
+    claimed_at = Column(DateTime, nullable=True, default=None)
     cpa_commission = Column(Float, default=0.0)
     cpa_is_refunded = Column(Boolean, default=False)
     ordered_at = Column(DateTime(timezone=True), default=func.now())
