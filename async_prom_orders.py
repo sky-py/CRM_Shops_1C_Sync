@@ -38,9 +38,9 @@ logger.add(
 )
 
 
-def send_message(order):
+async def send_message(order):
     message_text = generate_message_text(order)
-    send_notification(
+    await send_notification(
         Notification(
             source='prom',
             order_id=order.order_id,
@@ -155,7 +155,7 @@ async def process_orders(orders: list, shop_name: str, color: str):
                 else:
                     notifications.extend(await process_one_order(order, session))
     for order in notifications:
-        send_message(order)
+        await send_message(order)
 
 
 def order_was_accepted(order, order_db) -> bool:

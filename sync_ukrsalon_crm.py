@@ -1,8 +1,9 @@
+import asyncio
 from contextlib import redirect_stdout
 import constants
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
-from db.db_init import Session_Sync
+from db.db_init_async import Session_async, create_tables, AsyncSession
 from db.models import UkrsalonOrderDB
 from parse.parse_insales_order import OrderInsales
 from parse.parse_constants import Status, ukrsalon_crm_id, insta_ukrsalon_crm_id
@@ -10,6 +11,7 @@ from telegram.sender_sync import send_service_tg_message
 from loguru import logger
 from pathlib import Path
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from telegram.sender import send_notification
 from telegram.types import Notification
 from tools.rich_log import RichLog
@@ -30,12 +32,12 @@ def init_logger() -> None:
                level='ERROR')
 
 
-def send_message(order: OrderInsales, key_crm_id: int):
+async def send_message(order: OrderInsales, key_crm_id: int):
     message_text = generate_message_text(order, key_crm_id)
-    send_notification(
+    await send_notification(
         Notification(
             source='ukrsalon',
-            order_id=order.source_uuid,
+            order_id=order.insales_id,
             shop_name='УкрСалон',
             text=message_text,
             button=True  # order.status_id == Status.NEW.value,
@@ -61,28 +63,28 @@ def generate_message_text(order: OrderInsales, key_crm_id: int) -> str:
     return send_text
 
 
-def update_order_backoffice(order: OrderInsales):
-    ukrsalon.write_order(order.insales_id,
-                         {'order': {
-                             'shipping_address_attributes': {
-                                 'phone': order.buyer.phone,
-                                 'name': order.buyer.name,
-                                 'surname': order.buyer.surname,
-                                 'middlename': order.buyer.middlename,
-                             },
-                         }
-                         })
+async def update_order_backoffice(order: OrderInsales):
+    await ukrsalon.write_order(order.insales_id,
+                               {'order': {
+                                   'shipping_address_attributes': {
+                                       'phone': order.buyer.phone,
+                                       'name': order.buyer.name,
+                                       'surname': order.buyer.surname,
+                                       'middlename': order.buyer.middlename,
+                                   },
+                               }
+                               })
 
 
-def update_client_backoffice(order: OrderInsales):
-    ukrsalon.write_client(order.buyer.id,
-                          {'client': {
-                              'phone': order.buyer.phone,
-                              'name': order.buyer.name,
-                              'surname': order.buyer.surname,
-                              'middlename': order.buyer.middlename,
-                          }
-                          })
+async def update_client_backoffice(order: OrderInsales):
+    await ukrsalon.write_client(order.buyer.id,
+                                {'client': {
+                                    'phone': order.buyer.phone,
+                                    'name': order.buyer.name,
+                                    'surname': order.buyer.surname,
+                                    'middlename': order.buyer.middlename,
+                                }
+                                })
 
 
 def set_order_shop(order: OrderInsales) -> None:
@@ -94,16 +96,16 @@ def set_order_shop(order: OrderInsales) -> None:
 
 
 # @retry(stop_after_delay=300, max_delay=20)
-def get_orders() -> list[dict]:
-    r = ukrsalon.get_orders()
+async def get_orders() -> list[dict]:
+    r = await ukrsalon.get_orders()
     r.raise_for_status()
     orders = r.json()
     rich_log.print_request(f'{len(orders)} last orders were received')
     return orders
 
 
-def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales, int] | None:
-    q = session.query(UkrsalonOrderDB).filter_by(insales_id=order_dict['id']).first()
+async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderInsales, int] | None:
+    q = (await session.execute(select(UkrsalonOrderDB).filter_by(insales_id=order_dict['id']))).scalars().first()
     if q is None:  # order not found in db
         try:
             order = OrderInsales(**order_dict)
@@ -112,13 +114,13 @@ def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales
             logger.error(f'Error parsing order {order_dict["number"]}: {e}')
             return None
         set_order_shop(order)
-        crm_reply = crm.new_order(order.model_dump())
+        crm_reply = await asyncio.to_thread(crm.new_order, order.model_dump())
         errors = crm_reply.get('errors', {})
         if errors:
             if errors.get('source_uuid', [''])[0] == 'The source uuid has already been taken.':
                 logger.info(f'Error inserting order {order.source_uuid} to CRM: The source uuid has already been taken. Trying to get order from CRM...')
                 try:
-                    crm_reply = crm.get_orders(filter={"source_uuid": order_dict['number']})[0]
+                    crm_reply = (await asyncio.to_thread(crm.get_orders, filter={"source_uuid": order_dict['number']}))[0]
                     logger.info(f'Successfully got id {order.source_uuid} from CRM')
                 except:
                     logger.error(f'Error getting id {order.source_uuid} from CRM => {crm_reply}')
@@ -127,7 +129,7 @@ def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales
                 logger.error(f'Got unknown error from CRM for order {order_dict['number']} {errors}')
                 return None
         try:
-            with session.begin_nested():
+            async with session.begin_nested():
                 session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,
                                             insales_id=order.insales_id,
                                             key_crm_id=crm_reply['id'],
@@ -139,12 +141,12 @@ def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales
                                             is_accepted=False if order.status_id == Status.NEW.value else True,
                                             json=order_dict
                                             ))
-                session.flush()
+                await session.flush()
         except IntegrityError:
             logger.info(f'Order {order.insales_id} already inserted concurrently. Skipping duplicate insert.')
             return None
-        update_order_backoffice(order)
-        update_client_backoffice(order)
+        await update_order_backoffice(order)
+        await update_client_backoffice(order)
         return order, crm_reply['id']
 
     if not q.is_accepted:
@@ -155,31 +157,36 @@ def process_order(order_dict: dict, session: Session_Sync) -> tuple[OrderInsales
     return None
 
 
-def main() -> None:
+async def main() -> None:
     notifications = []
-    with Session_Sync.begin() as session:
+    async with Session_async.begin() as session:
         with redirect_stdout(rich_log.console_to_rich_log_redirector):
-            orders = get_orders()
+            orders = await get_orders()
         for order_dict in orders:
-            notification = process_order(order_dict, session)
+            notification = await process_order(order_dict, session)
             if notification is not None:
                 notifications.append(notification)
     for pair_data in notifications:
         if pair_data[0].status_id != Status.CANCELLED.value:
-            send_message(*pair_data)
+            await send_message(*pair_data)
+
+
+async def run() -> None:
+    await create_tables()
+    while True:
+        await main()
+        if reload_file.exists():
+            reload_file.unlink(missing_ok=True)
+            logger.info(f'SHUTTING DOWN {__file__}')
+            return
+        await asyncio.to_thread(rich_log.sleep, constants.time_to_sleep_insales_crm)
 
 
 if __name__ == '__main__':
     init_logger()
     logger.info(f'STARTING {__file__}')
     try:
-        while True:
-            main()
-            if reload_file.exists():
-                reload_file.unlink(missing_ok=True)
-                logger.info(f'SHUTTING DOWN {__file__}')
-                exit(0)
-            rich_log.sleep(constants.time_to_sleep_insales_crm)
+        asyncio.run(run())
     except Exception as e:
         logger.exception(f'Error in {__file__}: {e}')
     finally:

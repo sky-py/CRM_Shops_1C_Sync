@@ -1,20 +1,21 @@
-import time
+import asyncio
 from enum import Enum
-import requests
+from functools import wraps
 import json
+import httpx
 from retry import retry
 
 
-REQUEST_TIMEOUT = (3, 10)
+REQUEST_TIMEOUT = httpx.Timeout(10.0, connect=3.0)
 REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP = 30
 ORDERS_PER_PAGE = 20
 
 
 class Method(Enum):
-    GET = 'get'
-    POST = 'post'
-    PUT = 'put'
-    DELETE = 'delete'
+    GET = 'GET'
+    POST = 'POST'
+    PUT = 'PUT'
+    DELETE = 'DELETE'
 
 
 class Route(Enum):
@@ -38,8 +39,9 @@ reviews = '/admin/reviews.json'
 
 
 def wait(func):
-    def wrapper(*args, **kwargs) -> requests.Response:
-        return_value = func(*args, **kwargs)
+    @wraps(func)
+    async def wrapper(*args, **kwargs) -> httpx.Response:
+        return_value = await func(*args, **kwargs)
         if return_value:
             remaining_limits = return_value.headers.get('api-usage-limit')
             print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
@@ -47,7 +49,7 @@ def wait(func):
                 remain, capacity = remaining_limits.split('/')
                 if int(remain) / int(capacity) > 0.95:
                     print(f'Exceeded limits, waiting {REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP} sec...')
-                    time.sleep(REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP)
+                    await asyncio.sleep(REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP)
             return return_value
     return wrapper
 
@@ -60,60 +62,53 @@ class Insales:
 
     @wait
     @retry(stop_after_delay=300)
-    def make_request(self, method: Method, route: str, params=None, data=None) -> requests.Response:
+    async def make_request(self, method: Method, route: str, params=None, data=None) -> httpx.Response:
         if params is None:
             params = {}
         if data is None:
             data = {}
         url = self.main_url + route
-        match method:
-            case Method.GET:
-                r = requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
-            case Method.PUT:
-                r = requests.put(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.POST:
-                r = requests.post(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
-            case Method.DELETE:
-                r = requests.delete(url=url, headers=self.headers, params=params, data=data, timeout=REQUEST_TIMEOUT)
+        async with httpx.AsyncClient(headers=self.headers, timeout=REQUEST_TIMEOUT) as client:
+            r = await client.request(method.value, url=url, params=params, content=data)
         r.raise_for_status()
         return r
 
-    def get_orders(self, page=1) -> requests.Response:
+    async def get_orders(self, page=1) -> httpx.Response:
         params = {'per_page': ORDERS_PER_PAGE, 'page': page}
-        return self.make_request(Method.GET, Route.GET_ORDERS.value,  params=params)
+        return await self.make_request(Method.GET, Route.GET_ORDERS.value,  params=params)
 
-    def get_one_order(self, order_id: int | str) -> requests.Response:
-        return self.make_request(Method.GET, Route.ONE_ORDER.value.format(order_id=order_id))
+    async def get_one_order(self, order_id: int | str) -> httpx.Response:
+        return await self.make_request(Method.GET, Route.ONE_ORDER.value.format(order_id=order_id))
 
-    def write_order(self, order_id: int | str, data: dict) -> requests.Response:
-        return self.make_request(Method.PUT, Route.ONE_ORDER.value.format(order_id=order_id), data=json.dumps(data))
+    async def write_order(self, order_id: int | str, data: dict) -> httpx.Response:
+        return await self.make_request(Method.PUT, Route.ONE_ORDER.value.format(order_id=order_id), data=json.dumps(data))
 
-    def get_client(self, client_id) -> requests.Response:
-        return self.make_request(Method.GET, Route.CLIENT.value.format(client_id=client_id))
+    async def get_client(self, client_id) -> httpx.Response:
+        return await self.make_request(Method.GET, Route.CLIENT.value.format(client_id=client_id))
 
-    def write_client(self, client_id, data) -> requests.Response:
-        return self.make_request(Method.PUT, Route.CLIENT.value.format(client_id=client_id), data=json.dumps(data))
+    async def write_client(self, client_id, data) -> httpx.Response:
+        return await self.make_request(Method.PUT, Route.CLIENT.value.format(client_id=client_id), data=json.dumps(data))
 
-    def change_bonuses(self, client_id: int | str, number_of_bonuses: int, description: str) -> requests.Response:
+    async def change_bonuses(self, client_id: int | str, number_of_bonuses: int, description: str) -> httpx.Response:
         data = {
             "bonus_system_transaction": {
                 "bonus_points": number_of_bonuses,
                 "description": description
             }
         }
-        return self.make_request(Method.POST, Route.CHANGE_BONUSES.value.format(client_id=client_id), data=json.dumps(data))
+        return await self.make_request(Method.POST, Route.CHANGE_BONUSES.value.format(client_id=client_id), data=json.dumps(data))
     
-    def get_webhooks(self) -> requests.Response:
-        return self.make_request(Method.GET, Route.GET_WEBHOOKS.value)
+    async def get_webhooks(self) -> httpx.Response:
+        return await self.make_request(Method.GET, Route.GET_WEBHOOKS.value)
     
-    def create_webhook(self, data) -> requests.Response:
-        return self.make_request(Method.POST, Route.GET_WEBHOOKS.value, data=json.dumps(data))
+    async def create_webhook(self, data) -> httpx.Response:
+        return await self.make_request(Method.POST, Route.GET_WEBHOOKS.value, data=json.dumps(data))
     
-    def delete_webhook(self, webhook_id) -> requests.Response:
-        return self.make_request(Method.DELETE, Route.ONE_WEBHOOK.value.format(webhook_id=webhook_id))
+    async def delete_webhook(self, webhook_id) -> httpx.Response:
+        return await self.make_request(Method.DELETE, Route.ONE_WEBHOOK.value.format(webhook_id=webhook_id))
     
-    def get_warehouses(self) -> requests.Response:
-        return self.make_request(Method.GET, Route.WAREHOUSES.value)
+    async def get_warehouses(self) -> httpx.Response:
+        return await self.make_request(Method.GET, Route.WAREHOUSES.value)
 
     #
     # def get_clients(page):

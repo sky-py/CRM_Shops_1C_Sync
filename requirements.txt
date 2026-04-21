@@ -1,5 +1,7 @@
 SQLAlchemy
 Flask
+fastapi
+uvicorn
 requests
 pydantic
 waitress

@@ -1,4 +1,3 @@
-import asyncio
 import constants
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
@@ -22,8 +21,8 @@ async def claim_order_handler(callback: CallbackQuery) -> None:
     source = parts[1]
     if source == 'ukrsalon' and len(parts) == 3:
         order_id = parts[2]
-        result = await asyncio.to_thread(claim_ukrsalon_order, order_id, manager_name)
-        order_title = f'Заказ {order_id} на {Shops.UKRSALON.value}'
+        result = await claim_ukrsalon_order(order_id, manager_name)
+        order_title = f'заказ {order_id} на {Shops.UKRSALON.value}'
     elif source == 'prom' and len(parts) == 4:
         order_id = parts[2]
         try:
@@ -31,15 +30,15 @@ async def claim_order_handler(callback: CallbackQuery) -> None:
         except KeyError:
             await callback.answer('Неизвестный магазин.', show_alert=True)
             return
-        result = await asyncio.to_thread(claim_prom_order, order_id, shop_name, manager_name)
-        order_title = f'Заказ {order_id} на {shop_name}'
+        result = await claim_prom_order(order_id, shop_name, manager_name)
+        order_title = f'заказ {order_id} на {shop_name}'
     else:
         await callback.answer('Некорректные данные кнопки.', show_alert=True)
         return
 
     if result.status == 'accepted':
         await callback.answer()
-        send_tg_message_to_managers(f'{order_title} принял менеджер {result.claimed_by_name}')
+        await send_tg_message_to_managers(f'{result.claimed_by_name} приняла {order_title}')
         return
 
     if result.status == 'already_claimed':

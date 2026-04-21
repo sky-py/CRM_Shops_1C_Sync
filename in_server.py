@@ -1,21 +1,24 @@
 import sys
-from flask import Flask, request
-from waitress import serve
-from parse.parse_key_crm_order import OrderKeyCrmShort
-from db.db_init import Session_Sync
-from db.models import UkrsalonOrderDB
-from api.insales_api import Insales
-import constants
-from parse.parse_constants import *
-from telegram.sender_sync import send_service_tg_message
-from werkzeug.exceptions import HTTPException
-from loguru import logger
 from pathlib import Path
+
+import constants
+import uvicorn
+from api.insales_api import Insales
+from db.db_init_async import Session_async
+from db.models import UkrsalonOrderDB
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from loguru import logger
+from parse.parse_constants import *
+from parse.parse_key_crm_order import OrderKeyCrmShort
 from retry import retry
+from sqlalchemy import select
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sync_ukrsalon_crm import process_order, send_message
+from telegram.sender_sync import send_service_tg_message
 
 
-app = Flask(__name__)
+app = FastAPI()
 salon = Insales(constants.UKRSALON_URL)
 reload_file = Path(__file__).with_suffix('.reload')
 
@@ -24,18 +27,21 @@ def init_logger() -> None:
     logger.remove()
     logger.add(sys.stdout, level="INFO")
     logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-            level='DEBUG', backtrace=True, diagnose=True)
+               level='DEBUG', backtrace=True, diagnose=True)
     logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-            level='ERROR')
+               level='ERROR')
 
 
-@app.errorhandler(Exception)
-def handle_exception(e):
-    if isinstance(e, HTTPException):
-        logger.error(f'[HTTP ERROR] {e}')
-        return e
+@app.exception_handler(StarletteHTTPException)
+async def handle_http_exception(request: Request, e: StarletteHTTPException):
+    logger.error(f'[HTTP ERROR] {e}')
+    return JSONResponse(status_code=e.status_code, content={'status': 'error', 'message': str(e.detail)})
+
+
+@app.exception_handler(Exception)
+async def handle_exception(request: Request, e: Exception):
     logger.exception(f'[GLOBAL ERROR] {e}')
-    return {'status': 'error', 'message': 'Internal Server Error'}, 500
+    return JSONResponse(status_code=500, content={'status': 'error', 'message': 'Internal Server Error'})
 
 
 def make_dict_for_request(key_order: OrderKeyCrmShort) -> dict:
@@ -56,25 +62,25 @@ def make_dict_for_request(key_order: OrderKeyCrmShort) -> dict:
 
 
 @retry(stop_after_delay=300)
-def send_order_backoffice(order_id: int, data: dict):
+async def send_order_backoffice(order_id: int, data: dict):
     try:
-        salon.write_order(order_id, data)
+        await salon.write_order(order_id, data)
     except Exception as e:
         logger.error(f'ERROR updating Insales order {order_id} | {str(e)}')
     else:
         logger.info(f'SUCCESS updating Insales order {order_id}')
 
 
-@app.route('/key_crm', methods=['POST'])
-def process_request():
+@app.post('/key_crm')
+async def process_request(request: Request):
     try:
-        data = request.json
+        data = await request.json()
     except Exception as e:
         send_service_tg_message(f"ERROR: not json data in key_crm webhook {__file__}\n{str(e)}")
         raise
     else:
         logger.debug(f'Got CRM webhook data: {data}')
-    
+
     try:
         key_order = OrderKeyCrmShort(**data)
     except Exception as e:
@@ -82,9 +88,11 @@ def process_request():
         raise
     else:
         logger.info(f'Got webhook for order: {key_order.key_crm_id}')
-        
-    with Session_Sync.begin() as session:
-        db_order = session.query(UkrsalonOrderDB).filter_by(key_crm_id=key_order.key_crm_id).first()
+
+    async with Session_async.begin() as session:
+        db_order = (
+            await session.execute(select(UkrsalonOrderDB).filter_by(key_crm_id=key_order.key_crm_id))
+        ).scalars().first()
         if db_order is not None:
             logger.info(f'FOUND in DB order {key_order.key_crm_id}')
             db_order.status_id = key_order.status.value
@@ -96,41 +104,38 @@ def process_request():
 
             order_dict = make_dict_for_request(key_order=key_order)
             logger.info(f'Updating Insales order {db_order.insales_id} with {order_dict} ...')
-            send_order_backoffice(db_order.insales_id, order_dict)
+            await send_order_backoffice(db_order.insales_id, order_dict)
 
         else:
             logger.info(f'not found in DB order {key_order.key_crm_id}')
 
-    return {'message': 'ok'}, 200
+    return {'message': 'ok'}
 
 
-@app.route('/ukrsalon_orders', methods=['POST'])
-def process_ukrsalon_orders():
+@app.post('/ukrsalon_orders')
+async def process_ukrsalon_orders(request: Request):
     try:
-        data = request.json
+        data = await request.json()
     except Exception as e:
         send_service_tg_message(f"ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}")
         raise
     else:
         logger.debug(f'Got Ukrsalon order {data['number']}')
 
-    with Session_Sync.begin() as session:
-        notification = process_order(data, session)
+    async with Session_async.begin() as session:
+        notification = await process_order(data, session)
 
     if notification is not None and notification[0].status_id != Status.CANCELLED.value:
-        send_message(*notification)
+        await send_message(*notification)
 
-    return {'message': 'ok'}, 200
+    return {'message': 'ok'}
 
 
 if __name__ == '__main__':
     init_logger()
     logger.info('Starting server for RECEIVING CRM Webhooks')
     try:
-        if constants.IS_PRODUCTION_SERVER:
-            serve(app, host='0.0.0.0', port=constants.CALLBACK_CRM_PORT, threads=4)
-        else:
-            app.run(host='0.0.0.0', port=constants.CALLBACK_CRM_PORT, debug=True)
+        uvicorn.run(app, host='0.0.0.0', port=constants.CALLBACK_CRM_PORT, reload=not constants.IS_PRODUCTION_SERVER)
     except Exception as e:
         logger.exception(f'Unexpected error in {__file__}: {e}')
     finally:

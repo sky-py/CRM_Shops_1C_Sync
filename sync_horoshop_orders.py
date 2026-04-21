@@ -29,9 +29,9 @@ logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-
            level='ERROR')
 
 
-def send_message(order) -> None:
+async def send_message(order) -> None:
     message_text = generate_message_text(order)
-    send_notification(
+    await send_notification(
         Notification(
             source='prom',
             order_id=order.order_id,
@@ -115,7 +115,7 @@ async def process_orders(orders: list, shop_name: str, color: str):
                     else:
                         pass
     for order in notifications:
-        send_message(order)
+        await send_message(order)
 
 
 async def process_one_order(order: OrderHoroshop, session: Session_async, color: str):

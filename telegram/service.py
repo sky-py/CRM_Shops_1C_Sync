@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
-from db.db_init import Session_Sync
+from db.db_init_async import Session_async
 from db.models import PromOrderDB, UkrsalonOrderDB
 from sqlalchemy import select
 
@@ -13,10 +13,10 @@ class ClaimResult:
     claimed_at: datetime | None = None
 
 
-def claim_ukrsalon_order(source_uuid: str, manager_name: str) -> ClaimResult:
-    with Session_Sync.begin() as session:
-        stmt = select(UkrsalonOrderDB).where(UkrsalonOrderDB.source_uuid == int(source_uuid)).with_for_update()
-        order_db = session.execute(stmt).scalar_one_or_none()
+async def claim_ukrsalon_order(insales_id: int, manager_name: str) -> ClaimResult:
+    async with Session_async.begin() as session:
+        stmt = select(UkrsalonOrderDB).where(UkrsalonOrderDB.insales_id == insales_id).with_for_update()
+        order_db = (await session.execute(stmt)).scalar_one_or_none()
         if order_db is None:
             return ClaimResult(status='not_found')
         if order_db.claimed_by_name:
@@ -26,18 +26,18 @@ def claim_ukrsalon_order(source_uuid: str, manager_name: str) -> ClaimResult:
 
         order_db.claimed_by_name = manager_name
         order_db.claimed_at = datetime.now()
-        session.flush()
+        await session.flush()
         return ClaimResult(status='accepted', claimed_by_name=order_db.claimed_by_name, claimed_at=order_db.claimed_at)
 
 
-def claim_prom_order(order_id: str, shop_name: str, manager_name: str) -> ClaimResult:
-    with Session_Sync.begin() as session:
+async def claim_prom_order(order_id: str, shop_name: str, manager_name: str) -> ClaimResult:
+    async with Session_async.begin() as session:
         stmt = (
             select(PromOrderDB)
             .where(PromOrderDB.order_id == int(order_id), PromOrderDB.shop == shop_name)
             .with_for_update()
         )
-        order_db = session.execute(stmt).scalar_one_or_none()
+        order_db = (await session.execute(stmt)).scalar_one_or_none()
         if order_db is None:
             return ClaimResult(status='not_found')
         if order_db.claimed_by_name:
@@ -47,5 +47,5 @@ def claim_prom_order(order_id: str, shop_name: str, manager_name: str) -> ClaimR
 
         order_db.claimed_by_name = manager_name
         order_db.claimed_at = datetime.now()
-        session.flush()
+        await session.flush()
         return ClaimResult(status='accepted', claimed_by_name=order_db.claimed_by_name, claimed_at=order_db.claimed_at)
