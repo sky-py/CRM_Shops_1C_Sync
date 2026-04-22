@@ -57,6 +57,10 @@ async def claim_order_handler(callback: CallbackQuery) -> None:
     await callback.answer('Заказ не найден.', show_alert=True)
 
 
-@router.message(F.text)
+@router.message()
 async def log_message_handler(message: Message) -> None:
-    logger.info(f'Unexpected bot message from {message.from_user.id} ({message.from_user.full_name}): {message.text}')
+    content = message.text or message.caption or '<no text>'
+    logger.info(
+        f'Unexpected bot message from {message.from_user.id} ({message.from_user.full_name}) '
+        f'[{message.content_type}]: {content}'
+    )

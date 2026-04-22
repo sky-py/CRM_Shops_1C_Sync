@@ -61,14 +61,10 @@ def make_dict_for_request(key_order: OrderKeyCrmShort) -> dict:
     return order_dict
 
 
-@retry(stop_after_delay=300)
 async def send_order_backoffice(order_id: int, data: dict):
-    try:
-        await salon.write_order(order_id, data)
-    except Exception as e:
-        logger.error(f'ERROR updating Insales order {order_id} | {str(e)}')
-    else:
-        logger.info(f'SUCCESS updating Insales order {order_id}')
+    logger.info(f'START updating Insales order {order_id}')
+    await salon.write_order(order_id, data)
+    logger.info(f'SUCCESS updating Insales order {order_id}')
 
 
 @app.post('/key_crm')

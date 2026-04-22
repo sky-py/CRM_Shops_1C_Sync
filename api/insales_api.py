@@ -63,10 +63,6 @@ class Insales:
     @wait
     @retry(stop_after_delay=300)
     async def make_request(self, method: Method, route: str, params=None, data=None) -> httpx.Response:
-        if params is None:
-            params = {}
-        if data is None:
-            data = {}
         url = self.main_url + route
         async with httpx.AsyncClient(headers=self.headers, timeout=REQUEST_TIMEOUT) as client:
             r = await client.request(method.value, url=url, params=params, content=data)
