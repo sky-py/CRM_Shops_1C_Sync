@@ -3,12 +3,10 @@ import platform
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-
 from loguru import logger
 from retry import retry
 from sqlalchemy.future import select
 import colorama
-
 import constants
 from api.horoshop_api_async import HoroshopClient
 from db.db_init_async import Session_async, create_tables
@@ -20,13 +18,15 @@ from telegram.sender import send_notification
 from telegram.types import Notification
 
 
-colorama.init()
 bad_orders = []
 reload_file = Path(__file__).with_suffix('.reload')
-logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-           level='INFO', backtrace=True, diagnose=True)
-logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-           level='ERROR')
+
+
+def init_logger() -> None:
+    logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
+            level='INFO', backtrace=True, diagnose=True)
+    logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
+            level='ERROR')
 
 
 async def send_message(order) -> None:
@@ -144,6 +144,8 @@ async def main():
 
 
 if __name__ == '__main__':
+    init_logger()
+    colorama.init()
     if platform.system() == 'Windows':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(main())

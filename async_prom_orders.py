@@ -22,20 +22,23 @@ from telegram.types import Notification
 colorama.init()
 bad_orders = []
 reload_file = Path(__file__).with_suffix('.reload')
-logger.add(
-    sink=f'log/{Path(__file__).stem}.log',
-    format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-    level='INFO',
-    backtrace=True,
-    diagnose=True,
-)
 
-logger.add(
-    sink=lambda msg: send_service_tg_message(msg),
-    format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-    level='ERROR',
-    filter=lambda record: record.update(exception=None) or True,
-)
+
+def init_logger() -> None:
+    logger.add(
+        sink=f'log/{Path(__file__).stem}.log',
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='INFO',
+        backtrace=True,
+        diagnose=True,
+    )
+
+    logger.add(
+        sink=lambda msg: send_service_tg_message(msg),
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='ERROR',
+        filter=lambda record: record.update(exception=None) or True,
+    )
 
 
 async def send_message(order):
@@ -217,6 +220,7 @@ async def main():
 
 
 if __name__ == '__main__':
+    init_logger()
     logger.info(f'STARTING {__file__}')
     try:
         asyncio.run(main())
