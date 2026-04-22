@@ -30,12 +30,10 @@ async def claim_ukrsalon_order(insales_id: int, manager_name: str) -> ClaimResul
         return ClaimResult(status='accepted', claimed_by_name=order_db.claimed_by_name, claimed_at=order_db.claimed_at)
 
 
-async def claim_prom_order(order_id: str, shop_name: str, manager_name: str) -> ClaimResult:
+async def claim_prom_order(order_id: int, shop_name: str, manager_name: str) -> ClaimResult:
     async with Session_async.begin() as session:
         stmt = (
-            select(PromOrderDB)
-            .where(PromOrderDB.order_id == int(order_id), PromOrderDB.shop == shop_name)
-            .with_for_update()
+            select(PromOrderDB).where(PromOrderDB.order_id == order_id, PromOrderDB.shop == shop_name).with_for_update()
         )
         order_db = (await session.execute(stmt)).scalar_one_or_none()
         if order_db is None:

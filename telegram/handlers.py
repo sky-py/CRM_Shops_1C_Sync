@@ -1,6 +1,7 @@
 import constants
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
+from loguru import logger
 from parse.parse_constants import Shops
 from telegram.sender import send_tg_message_to_managers
 from telegram.service import claim_prom_order, claim_ukrsalon_order
@@ -20,11 +21,19 @@ async def claim_order_handler(callback: CallbackQuery) -> None:
 
     source = parts[1]
     if source == 'ukrsalon' and len(parts) == 3:
-        order_id = parts[2]
+        try:
+            order_id = int(parts[2])
+        except ValueError:
+            await callback.answer('Некорректный номер заказа.', show_alert=True)
+            return
         result = await claim_ukrsalon_order(order_id, manager_name)
         order_title = f'заказ {order_id} на {Shops.UKRSALON.value}'
     elif source == 'prom' and len(parts) == 4:
-        order_id = parts[2]
+        try:
+            order_id = int(parts[2])
+        except ValueError:
+            await callback.answer('Некорректный номер заказа.', show_alert=True)
+            return
         try:
             shop_name = Shops[parts[3]].value
         except KeyError:
@@ -46,3 +55,8 @@ async def claim_order_handler(callback: CallbackQuery) -> None:
         return
 
     await callback.answer('Заказ не найден.', show_alert=True)
+
+
+@router.message(F.text)
+async def log_message_handler(message: Message) -> None:
+    logger.info(f'Unexpected bot message from {message.from_user.id} ({message.from_user.full_name}): {message.text}')

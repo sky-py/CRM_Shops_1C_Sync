@@ -7,6 +7,7 @@ load_dotenv('/etc/env/tg.env')
 load_dotenv('/etc/env/crm.env')
 load_dotenv('/etc/env/dev.env')
 load_dotenv('/etc/env/ai.env')
+load_dotenv('/etc/env/db.env')
 
 
 def get_env(var: str) -> str:
@@ -29,6 +30,10 @@ CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
 
 UKRSALON_URL = get_env('UKRSALON_URL')
 CALLBACK_CRM_PORT = int(get_env('CALLBACK_CRM_PORT'))
+POSTGRES_USER = get_env('POSTGRES_user')
+POSTGRES_PASSWORD = get_env('POSTGRES_password')
+SALON_DB = get_env('SALON_db')
+POSTGRES_HOST = 'localhost'
 
 # ================================================= TELEGRAM =============================================
 tg_token_salon = get_env('tg_token_salon')
