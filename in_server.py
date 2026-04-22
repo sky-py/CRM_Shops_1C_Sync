@@ -1,6 +1,5 @@
 import sys
 from pathlib import Path
-
 import constants
 import uvicorn
 from api.insales_api import Insales
@@ -11,12 +10,10 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from parse.parse_constants import *
 from parse.parse_key_crm_order import OrderKeyCrmShort
-from retry import retry
 from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from sync_ukrsalon_crm import process_order, send_message
 from telegram.sender_sync import send_service_tg_message
-
 
 app = FastAPI()
 salon = Insales(constants.UKRSALON_URL)
@@ -25,11 +22,19 @@ reload_file = Path(__file__).with_suffix('.reload')
 
 def init_logger() -> None:
     logger.remove()
-    logger.add(sys.stdout, level="INFO")
-    logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-               level='DEBUG', backtrace=True, diagnose=True)
-    logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-               level='ERROR')
+    logger.add(sys.stdout, level='INFO')
+    logger.add(
+        sink=f'log/{Path(__file__).stem}.log',
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='DEBUG',
+        backtrace=True,
+        diagnose=True,
+    )
+    logger.add(
+        sink=lambda msg: send_service_tg_message(msg),
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='ERROR',
+    )
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -49,11 +54,12 @@ def make_dict_for_request(key_order: OrderKeyCrmShort) -> dict:
     if key_order.status == Status.DISPATCHED:
         key_order.status = Status.PRODUCTION
     fulfillment_status = get_key_by_value(status_insales_to_db, key_order.status)
-    order_dict = {'order':
-                  {
-                      # "responsible_user_id": responsible_user_id,
-                      "fulfillment_status": fulfillment_status
-                   }}
+    order_dict = {
+        'order': {
+            # "responsible_user_id": responsible_user_id,
+            'fulfillment_status': fulfillment_status
+        }
+    }
     if key_order.status == Status.SUCCESS:
         order_dict['order']['financial_status'] = get_key_by_value(financial_status_to_db, True)
     elif key_order.status == Status.CANCELLED:
@@ -72,7 +78,7 @@ async def process_request(request: Request):
     try:
         data = await request.json()
     except Exception as e:
-        send_service_tg_message(f"ERROR: not json data in key_crm webhook {__file__}\n{str(e)}")
+        send_service_tg_message(f'ERROR: not json data in key_crm webhook {__file__}\n{str(e)}')
         raise
     else:
         logger.debug(f'Got CRM webhook data: {data}')
@@ -80,15 +86,17 @@ async def process_request(request: Request):
     try:
         key_order = OrderKeyCrmShort(**data)
     except Exception as e:
-        send_service_tg_message(f"ERROR parsing key_crm webhook data {__file__}\n{str(e)}")
+        send_service_tg_message(f'ERROR parsing key_crm webhook data {__file__}\n{str(e)}')
         raise
     else:
         logger.info(f'Got webhook for order: {key_order.key_crm_id}')
 
     async with Session_async.begin() as session:
         db_order = (
-            await session.execute(select(UkrsalonOrderDB).filter_by(key_crm_id=key_order.key_crm_id))
-        ).scalars().first()
+            (await session.execute(select(UkrsalonOrderDB).filter_by(key_crm_id=key_order.key_crm_id)))
+            .scalars()
+            .first()
+        )
         if db_order is not None:
             logger.info(f'FOUND in DB order {key_order.key_crm_id}')
             db_order.status_id = key_order.status.value
@@ -113,10 +121,10 @@ async def process_ukrsalon_orders(request: Request):
     try:
         data = await request.json()
     except Exception as e:
-        send_service_tg_message(f"ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}")
+        send_service_tg_message(f'ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}')
         raise
     else:
-        logger.debug(f'Got Ukrsalon order {data['number']}')
+        logger.debug(f'Got Ukrsalon order {data["number"]}')
 
     async with Session_async.begin() as session:
         notification = await process_order(data, session)
