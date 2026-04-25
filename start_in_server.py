@@ -12,7 +12,7 @@ from parse.parse_constants import *
 from parse.parse_key_crm_order import OrderKeyCrmShort
 from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from sync_ukrsalon_crm import process_order, send_message
+from process_ukrsalon_orders import process_order, send_message
 from telegram.sender_sync import send_service_tg_message
 
 app = FastAPI()
