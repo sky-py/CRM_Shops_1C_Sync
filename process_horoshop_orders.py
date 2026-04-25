@@ -14,6 +14,7 @@ from db.models import PromOrderDB
 from telegram.sender_sync import send_service_tg_message
 from parse.parse_constants import PromStatus
 from parse.horoshop_models import OrderHoroshop
+from telegram.bot import close_bot_session
 from telegram.sender import send_notification
 from telegram.types import Notification
 
@@ -83,7 +84,6 @@ async def get_orders(shop_client: HoroshopClient) -> list | None:
     return await shop_client.get_orders(date_from=from_date, limit=1000)
 
 
-@logger.catch
 async def worker(shop: dict):
     shop_client = HoroshopClient(shop_url=shop['url'], login=shop['login'], password=shop['password'])
     color = get_color(shop)
@@ -94,7 +94,7 @@ async def worker(shop: dict):
         await process_orders(orders, shop['name'], color)
         print(color + f'HOROSHOP {shop['name']} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')
         if reload_file.exists():
-            logger.info(f'STOPPING {shop['name']} thread')
+            logger.info(f'Found reload file {__file__}, STOPPING {shop['name']} thread')
             return
         await asyncio.sleep(constants.PROM_SLEEP_TIME)
 
@@ -108,9 +108,9 @@ async def process_orders(orders: list, shop_name: str, color: str):
                     order = OrderHoroshop(**order_dict)
                     order.shop = shop_name
                     notifications.extend(await process_one_order(order, session, color))
-                except:
+                except Exception as e:
                     if order_dict['order_id'] not in bad_orders:
-                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]}')
+                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]} {e}')
                         bad_orders.append(order_dict['order_id'])
                     else:
                         pass
@@ -135,17 +135,26 @@ async def process_one_order(order: OrderHoroshop, session: Session_async, color:
     return notifications
 
 
-async def main():
-    logger.info(f'STARTING {__file__}')
-    await create_tables()
-    await asyncio.gather(*[worker(shop) for shop in constants.horoshop_shops])
-    reload_file.unlink(missing_ok=True)
-    logger.info(f'SHUTTING DOWN {__file__}')
+async def main() -> None:
+    try:
+        await create_tables()
+        await asyncio.gather(*[worker(shop) for shop in constants.horoshop_shops])
+    finally:
+        await close_bot_session()
 
 
 if __name__ == '__main__':
     init_logger()
     colorama.init()
+    logger.info(f'STARTING {__file__}')
+
     if platform.system() == 'Windows':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(main())
+
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.exception(f'Error in {__file__}: {e}')
+    finally:
+        reload_file.unlink(missing_ok=True)
+        logger.info(f'SHUTTING DOWN {__file__}')

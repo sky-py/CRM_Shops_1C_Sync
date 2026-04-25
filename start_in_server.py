@@ -1,4 +1,6 @@
+import asyncio
 import sys
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 import constants
 import uvicorn
@@ -10,14 +12,53 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from parse.parse_constants import *
 from parse.parse_key_crm_order import OrderKeyCrmShort
+from process_ukrsalon_orders import process_order, send_message
 from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from process_ukrsalon_orders import process_order, send_message
+from telegram.bot import close_bot_session
 from telegram.sender_sync import send_service_tg_message
 
-app = FastAPI()
+
 salon = Insales(constants.UKRSALON_URL)
 reload_file = Path(__file__).with_suffix('.reload')
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        await close_bot_session()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+async def reload_file_watcher(server: uvicorn.Server) -> None:
+    while True:
+        if reload_file.exists():
+            reload_file.unlink(missing_ok=True)
+            logger.info(f'Found reload file {__file__}, STOPPING server')
+            server.should_exit = True
+            return
+        await asyncio.sleep(2)
+
+
+async def run_server() -> None:
+    config = uvicorn.Config(
+        app,
+        host='0.0.0.0',
+        port=constants.CALLBACK_CRM_PORT,
+        reload=False,  # reload=not constants.IS_PRODUCTION_SERVER
+    )
+    server = uvicorn.Server(config)
+    watcher_task = asyncio.create_task(reload_file_watcher(server))
+    try:
+        await server.serve()
+    finally:
+        watcher_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await watcher_task
 
 
 def init_logger() -> None:
@@ -139,7 +180,7 @@ if __name__ == '__main__':
     init_logger()
     logger.info('Starting server for RECEIVING CRM Webhooks')
     try:
-        uvicorn.run(app, host='0.0.0.0', port=constants.CALLBACK_CRM_PORT, reload=False)  # reload=not constants.IS_PRODUCTION_SERVER)
+        asyncio.run(run_server())
     except Exception as e:
         logger.exception(f'Unexpected error in {__file__}: {e}')
     finally:

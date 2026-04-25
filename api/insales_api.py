@@ -8,7 +8,7 @@ from retry import retry
 
 REQUEST_TIMEOUT = httpx.Timeout(10.0, connect=3.0)
 REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP = 30
-ORDERS_PER_PAGE = 20
+ORDERS_PER_PAGE = 40
 
 
 class Method(Enum):

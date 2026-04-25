@@ -1,9 +1,14 @@
+import asyncio
+from contextlib import suppress
 from pathlib import Path
 from aiogram import Dispatcher
 from loguru import logger
 from telegram.bot import close_bot_session, orders_bot
 from telegram.handlers import router
 from telegram.sender_sync import send_service_tg_message
+
+
+reload_file = Path(__file__).with_suffix('.reload')
 
 
 def init_logger() -> None:
@@ -21,14 +26,30 @@ def init_logger() -> None:
     )
 
 
+async def reload_file_watcher(dp: Dispatcher) -> None:
+    while True:
+        if reload_file.exists():
+            logger.info(f'Found reload file {__file__}, STOPPING orders bot')
+            await dp.stop_polling()
+            return
+        await asyncio.sleep(2)
+
+
 async def run_bot() -> None:
     init_logger()
+    watcher_task = None
     try:
         dp = Dispatcher()
         dp.include_router(router)
+        watcher_task = asyncio.create_task(reload_file_watcher(dp))
         await dp.start_polling(orders_bot)
     except Exception as e:
         logger.exception(f'Error in {__file__}: {e}')
     finally:
-        logger.info('ORDERS BOT STOPPED')
+        if watcher_task is not None:
+            watcher_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher_task
         await close_bot_session()
+        reload_file.unlink(missing_ok=True)
+        logger.info(f'SHUTTING DOWN {__file__}')

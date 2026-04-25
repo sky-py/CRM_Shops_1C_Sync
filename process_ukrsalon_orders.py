@@ -1,4 +1,5 @@
 import asyncio
+import platform
 from contextlib import redirect_stdout
 from pathlib import Path
 import constants
@@ -12,6 +13,7 @@ from parse.parse_constants import Status, insta_ukrsalon_crm_id, ukrsalon_crm_id
 from parse.parse_insales_order import OrderInsales
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from telegram.bot import close_bot_session
 from telegram.sender import send_notification
 from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
@@ -132,7 +134,7 @@ async def create_or_get_crm_order(order: OrderInsales, order_dict: dict) -> dict
     if not constants.IS_PRODUCTION_SERVER:
         return {'id': 1}
 
-    replace_zero_price(order)   # CRM doesn't allow 0 price
+    replace_zero_price(order)  # CRM doesn't allow 0 price
 
     try:
         crm_reply = await asyncio.to_thread(crm.new_order, order.model_dump())
@@ -148,7 +150,7 @@ async def create_or_get_crm_order(order: OrderInsales, order_dict: dict) -> dict
     # {'errors': {'payments.0.amount': ['The payments.0.amount must be at least 0.01.']}, 'message': 'The payments.0.amount must be at least 0.01.'}
     source_uuid_errors = errors.get('source_uuid', [])
     if SOURCE_UUID_TAKEN_ERROR not in source_uuid_errors:
-        logger.error(f'Got unknown error from CRM for order {order_dict['number']} {errors}')
+        logger.error(f'Got unknown error from CRM for order {order_dict["number"]} {errors}')
         return None
 
     logger.info(
@@ -214,38 +216,52 @@ async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderI
     return None
 
 
-async def main() -> None:
-    notifications = []
-    async with Session_async.begin() as session:
+async def worker() -> None:
+    while True:
         with redirect_stdout(rich_log.console_to_rich_log_redirector):
             orders = await get_orders()
+        notifications = await process_orders(orders)
+        for pair_data in notifications:
+            if pair_data[0].status_id != Status.CANCELLED.value:
+                await send_message(*pair_data)
+
+        if reload_file.exists():
+            logger.info(f'Found reload file {__file__}, STOPPING Ukrsalon orders sync')
+            return
+        await asyncio.to_thread(rich_log.sleep, constants.time_to_sleep_insales_crm)
+
+
+async def process_orders(orders: list):
+    notifications = []
+    async with Session_async.begin() as session:
         for order_dict in orders:
             notification = await process_order(order_dict, session)
             if notification is not None:
                 notifications.append(notification)
-    for pair_data in notifications:
-        if pair_data[0].status_id != Status.CANCELLED.value:
-            await send_message(*pair_data)
+    return notifications
 
 
-async def run() -> None:
-    await create_tables()
-    while True:
-        await main()
-        if reload_file.exists():
-            reload_file.unlink(missing_ok=True)
-            logger.info(f'SHUTTING DOWN {__file__}')
-            return
-        await asyncio.to_thread(rich_log.sleep, constants.time_to_sleep_insales_crm)
+async def main() -> None:
+    try:
+        await create_tables()
+        await worker()
+    finally:
+        await close_bot_session()
 
 
 if __name__ == '__main__':
     rich_log = RichLog(header=f'Синхронизация Укрсалона с CRM       {__file__}')
     init_logger()
     logger.info(f'STARTING {__file__}')
+
+    if platform.system() == 'Windows':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     try:
-        asyncio.run(run())
+        asyncio.run(main())
     except Exception as e:
         logger.exception(f'Error in {__file__}: {e}')
     finally:
+        reload_file.unlink(missing_ok=True)
         rich_log.stop()
+        logger.info(f'SHUTTING DOWN {__file__}')

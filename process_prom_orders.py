@@ -15,11 +15,11 @@ from parse.parse_constants import PromStatus
 from parse.parse_prom_order import OrderProm
 from retry import retry
 from sqlalchemy.future import select
+from telegram.bot import close_bot_session
 from telegram.sender import send_notification
 from telegram.types import Notification
 
 
-colorama.init()
 bad_orders = []
 reload_file = Path(__file__).with_suffix('.reload')
 
@@ -137,7 +137,7 @@ async def worker(shop: dict):
         await process_orders(orders, shop_name, color)
         print(color + f'PROM {shop_name} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')
         if reload_file.exists():
-            logger.info(f'STOPPING {shop_name} thread')
+            logger.info(f'Found reload file {__file__}, STOPPING {shop_name} thread')
             return
         await asyncio.sleep(constants.PROM_SLEEP_TIME)
         # await asyncio.sleep(3600) # for testing purposes, remove in production
@@ -213,15 +213,21 @@ async def process_one_order(order: OrderProm, session: AsyncSession):
 
 
 async def main():
-    if platform.system() == 'Windows':
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    await create_tables()
-    await asyncio.gather(*[worker(shop) for shop in constants.prom_shops])
+    try:
+        await create_tables()
+        await asyncio.gather(*[worker(shop) for shop in constants.prom_shops])
+    finally:
+        await close_bot_session()
 
 
 if __name__ == '__main__':
     init_logger()
+    colorama.init()
     logger.info(f'STARTING {__file__}')
+
+    if platform.system() == 'Windows':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     try:
         asyncio.run(main())
     except Exception as e:
