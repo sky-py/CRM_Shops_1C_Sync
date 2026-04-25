@@ -123,8 +123,8 @@ async def process_ukrsalon_orders(request: Request):
     except Exception as e:
         send_service_tg_message(f'ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}')
         raise
-    else:
-        logger.debug(f'Got Ukrsalon order {data["number"]}')
+
+    logger.debug(f'Got Ukrsalon order {data.get('number')}')
 
     async with Session_async.begin() as session:
         notification = await process_order(data, session)
@@ -139,7 +139,7 @@ if __name__ == '__main__':
     init_logger()
     logger.info('Starting server for RECEIVING CRM Webhooks')
     try:
-        uvicorn.run(app, host='0.0.0.0', port=constants.CALLBACK_CRM_PORT, reload=not constants.IS_PRODUCTION_SERVER)
+        uvicorn.run(app, host='0.0.0.0', port=constants.CALLBACK_CRM_PORT, reload=False)  # reload=not constants.IS_PRODUCTION_SERVER)
     except Exception as e:
         logger.exception(f'Unexpected error in {__file__}: {e}')
     finally:

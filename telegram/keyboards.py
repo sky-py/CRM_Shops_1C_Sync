@@ -3,9 +3,9 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from parse.parse_constants import Shops
 
 
-def build_claim_keyboard(source: str, order_id: int, shop_name: str) -> InlineKeyboardMarkup:
+def build_claim_keyboard(source: str, order_id: int, shop_name: str, source_uuid: int | None = None) -> InlineKeyboardMarkup:
     if source == 'ukrsalon':
-        callback_data = f'claim:ukrsalon:{order_id}'
+        callback_data = f'claim:ukrsalon:{order_id}:{source_uuid}'
     elif source == 'prom':
         callback_data = f'claim:prom:{order_id}:{Shops(shop_name).name}'
     else:

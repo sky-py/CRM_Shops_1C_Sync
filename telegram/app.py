@@ -8,7 +8,7 @@ from telegram.sender_sync import send_service_tg_message
 
 def init_logger() -> None:
     logger.add(
-        sink=f'log/{Path(__file__).stem}.log',
+        sink=f'log/orders_bot_{Path(__file__).stem}.log',
         format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
         level='INFO',
         backtrace=True,
@@ -30,4 +30,5 @@ async def run_bot() -> None:
     except Exception as e:
         logger.exception(f'Error in {__file__}: {e}')
     finally:
+        logger.info('ORDERS BOT STOPPED')
         await close_bot_session()

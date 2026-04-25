@@ -1,35 +1,45 @@
 import asyncio
 from contextlib import redirect_stdout
+from pathlib import Path
 import constants
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
-from db.db_init_async import Session_async, create_tables, AsyncSession
+from db.db_init_async import AsyncSession, Session_async, create_tables
 from db.models import UkrsalonOrderDB
-from parse.parse_insales_order import OrderInsales
-from parse.parse_constants import Status, ukrsalon_crm_id, insta_ukrsalon_crm_id
-from telegram.sender_sync import send_service_tg_message
+from exceptions import response_details_from_exception
 from loguru import logger
-from pathlib import Path
-from sqlalchemy.exc import IntegrityError
+from parse.parse_constants import Status, insta_ukrsalon_crm_id, ukrsalon_crm_id
+from parse.parse_insales_order import OrderInsales
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from telegram.sender import send_notification
+from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
 from tools.rich_log import RichLog
 
 ukrsalon = Insales(constants.UKRSALON_URL)
 crm = KeyCRM(constants.CRM_API_KEY)
-rich_log = RichLog(header=f'Синхронизация Укрсалона с CRM       {__file__}')
 
 reload_file = Path(__file__).with_suffix('.reload')
+PRODUCT_MIN_PRICE = 0.01
+SOURCE_UUID_TAKEN_ERROR = 'The source uuid has already been taken.'
 
 
 def init_logger() -> None:
     logger.remove()
     logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
-    logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-               level='INFO', backtrace=True, diagnose=True)
-    logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-               level='ERROR')
+    logger.add(
+        sink=f'log/{Path(__file__).stem}.log',
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='INFO',
+        backtrace=True,
+        diagnose=True,
+    )
+    logger.add(
+        sink=lambda msg: send_service_tg_message(msg),
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='ERROR',
+    )
 
 
 async def send_message(order: OrderInsales, key_crm_id: int):
@@ -38,12 +48,12 @@ async def send_message(order: OrderInsales, key_crm_id: int):
         Notification(
             source='ukrsalon',
             order_id=order.insales_id,
+            source_uuid=order.source_uuid,
             shop_name='УкрСалон',
             text=message_text,
-            button=True  # order.status_id == Status.NEW.value,
+            button=True,  # order.status_id == Status.NEW.value,
         )
     )
-    logger.info(message_text)
 
 
 def generate_message_text(order: OrderInsales, key_crm_id: int) -> str:
@@ -53,38 +63,46 @@ def generate_message_text(order: OrderInsales, key_crm_id: int) -> str:
         case _:
             state = 'НОВЫЙ'  # 'Принят'
 
-    send_text = (f'{state} заказ {order.source_uuid} на Укрсалоне =>\n'
-                 f'Сумма: {round(order.total_price)} грн.\n'
-                 f'Клиент: {order.buyer.full_name}\n'
-                 f'Телефон: {order.buyer.phone}\n')
-    if order.status_id == Status.NEW.value:
-        send_text += f'Админка: https://ukrsalon.com.ua/admin2/orders/{order.insales_id}\n'
-        # f'CRM: https://ukrsalon.keycrm.app/app/orders/view/{key_crm_id}')
+    send_text = (
+        f'{state} заказ {order.source_uuid} на Укрсалоне =>\n'
+        f'Сумма: {round(order.total_price)} грн.\n'
+        f'Клиент: {order.buyer.full_name}\n'
+        f'Телефон: {order.buyer.phone}\n'
+    )
+    # if order.status_id == Status.NEW.value:
+    send_text += f'Админка: https://ukrsalon.com.ua/admin2/orders/{order.insales_id}\n'
+    # f'CRM: https://ukrsalon.keycrm.app/app/orders/view/{key_crm_id}')
     return send_text
 
 
-async def update_order_backoffice(order: OrderInsales):
-    await ukrsalon.write_order(order.insales_id,
-                               {'order': {
-                                   'shipping_address_attributes': {
-                                       'phone': order.buyer.phone,
-                                       'name': order.buyer.name,
-                                       'surname': order.buyer.surname,
-                                       'middlename': order.buyer.middlename,
-                                   },
-                               }
-                               })
+async def update_shipping_address_backoffice(order: OrderInsales):
+    await ukrsalon.write_order(
+        order.insales_id,
+        {
+            'order': {
+                'shipping_address_attributes': {
+                    'phone': order.buyer.phone,
+                    'name': order.buyer.name,
+                    'surname': order.buyer.surname,
+                    'middlename': order.buyer.middlename,
+                }
+            }
+        },
+    )
 
 
 async def update_client_backoffice(order: OrderInsales):
-    await ukrsalon.write_client(order.buyer.id,
-                                {'client': {
-                                    'phone': order.buyer.phone,
-                                    'name': order.buyer.name,
-                                    'surname': order.buyer.surname,
-                                    'middlename': order.buyer.middlename,
-                                }
-                                })
+    await ukrsalon.write_client(
+        order.buyer.id,
+        {
+            'client': {
+                'phone': order.buyer.phone,
+                'name': order.buyer.name,
+                'surname': order.buyer.surname,
+                'middlename': order.buyer.middlename,
+            }
+        },
+    )
 
 
 def set_order_shop(order: OrderInsales) -> None:
@@ -104,6 +122,52 @@ async def get_orders() -> list[dict]:
     return orders
 
 
+def replace_zero_price(order: OrderInsales) -> None:
+    for product in order.products:
+        if product.price == 0:
+            product.price = PRODUCT_MIN_PRICE
+
+
+async def create_or_get_crm_order(order: OrderInsales, order_dict: dict) -> dict | None:
+    if not constants.IS_PRODUCTION_SERVER:
+        return {'id': 1}
+
+    replace_zero_price(order)   # CRM doesn't allow 0 price
+
+    try:
+        crm_reply = await asyncio.to_thread(crm.new_order, order.model_dump())
+    except Exception as e:
+        logger.error(
+            f'Error inserting Insales order {order.source_uuid} to CRM => {response_details_from_exception(e)}'
+        )
+        return None
+
+    errors = crm_reply.get('errors', {})
+    if not errors:
+        return crm_reply
+    # {'errors': {'payments.0.amount': ['The payments.0.amount must be at least 0.01.']}, 'message': 'The payments.0.amount must be at least 0.01.'}
+    source_uuid_errors = errors.get('source_uuid', [])
+    if SOURCE_UUID_TAKEN_ERROR not in source_uuid_errors:
+        logger.error(f'Got unknown error from CRM for order {order_dict['number']} {errors}')
+        return None
+
+    logger.info(
+        f'Error inserting order {order.source_uuid} to CRM: {SOURCE_UUID_TAKEN_ERROR}. Trying to get order from CRM...'
+    )
+    try:
+        crm_orders = await asyncio.to_thread(crm.get_orders, filter={'source_uuid': order_dict['number']})
+    except Exception as e:
+        logger.error(f'Error getting id {order.source_uuid} from CRM => {e}')
+        return None
+
+    if not crm_orders:
+        logger.error(f'Error getting id {order.source_uuid} from CRM => empty response')
+        return None
+
+    logger.info(f'Successfully got id {order.source_uuid} from CRM')
+    return crm_orders[0]
+
+
 async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderInsales, int] | None:
     q = (await session.execute(select(UkrsalonOrderDB).filter_by(insales_id=order_dict['id']))).scalars().first()
     if q is None:  # order not found in db
@@ -111,42 +175,35 @@ async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderI
             order = OrderInsales(**order_dict)
             logger.info(f'Got new order {order.source_uuid} => {order}')
         except Exception as e:
-            logger.error(f'Error parsing order {order_dict["number"]}: {e}')
+            logger.error(f'Error parsing order {order_dict.get("number")}: {e}')
             return None
         set_order_shop(order)
-        crm_reply = await asyncio.to_thread(crm.new_order, order.model_dump())
-        errors = crm_reply.get('errors', {})
-        if errors:
-            if errors.get('source_uuid', [''])[0] == 'The source uuid has already been taken.':
-                logger.info(f'Error inserting order {order.source_uuid} to CRM: The source uuid has already been taken. Trying to get order from CRM...')
-                try:
-                    crm_reply = (await asyncio.to_thread(crm.get_orders, filter={"source_uuid": order_dict['number']}))[0]
-                    logger.info(f'Successfully got id {order.source_uuid} from CRM')
-                except:
-                    logger.error(f'Error getting id {order.source_uuid} from CRM => {crm_reply}')
-                    return None
-            else:
-                logger.error(f'Got unknown error from CRM for order {order_dict['number']} {errors}')
-                return None
+        crm_reply = await create_or_get_crm_order(order, order_dict)
+        if crm_reply is None:
+            return None
         try:
             async with session.begin_nested():
-                session.add(UkrsalonOrderDB(source_uuid=order.source_uuid,
-                                            insales_id=order.insales_id,
-                                            key_crm_id=crm_reply['id'],
-                                            ordered_at=order.ordered_at,
-                                            total_price=order.total_price,
-                                            manager_id=order.manager_DB,
-                                            status_id=order.status_id,
-                                            is_paid=order.is_paid,
-                                            is_accepted=False if order.status_id == Status.NEW.value else True,
-                                            json=order_dict
-                                            ))
+                session.add(
+                    UkrsalonOrderDB(
+                        source_uuid=order.source_uuid,
+                        insales_id=order.insales_id,
+                        key_crm_id=crm_reply['id'],
+                        ordered_at=order.ordered_at,
+                        total_price=order.total_price,
+                        manager_id=order.manager_DB,
+                        status_id=order.status_id,
+                        is_paid=order.is_paid,
+                        is_accepted=False if order.status_id == Status.NEW.value else True,
+                        json=order_dict,
+                    )
+                )
                 await session.flush()
         except IntegrityError:
             logger.info(f'Order {order.insales_id} already inserted concurrently. Skipping duplicate insert.')
             return None
-        await update_order_backoffice(order)
-        await update_client_backoffice(order)
+        if constants.IS_PRODUCTION_SERVER:
+            await update_shipping_address_backoffice(order)
+            await update_client_backoffice(order)
         return order, crm_reply['id']
 
     if not q.is_accepted:
@@ -183,6 +240,7 @@ async def run() -> None:
 
 
 if __name__ == '__main__':
+    rich_log = RichLog(header=f'Синхронизация Укрсалона с CRM       {__file__}')
     init_logger()
     logger.info(f'STARTING {__file__}')
     try:

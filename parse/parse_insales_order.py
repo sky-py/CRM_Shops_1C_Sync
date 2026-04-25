@@ -1,4 +1,6 @@
 from typing import Optional
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from common_funcs import international_phone
 from parse.parse_constants import (
     Status,
@@ -8,9 +10,13 @@ from parse.parse_constants import (
     payment_insales_to_crm_id,
     status_insales_to_db,
 )
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 MAX_TEXT_LENGTH = 245
+try:
+    KYIV_TZ = ZoneInfo('Europe/Kyiv')
+except ZoneInfoNotFoundError:
+    KYIV_TZ = timezone(timedelta(hours=3))
 
 
 class Client(BaseModel):
@@ -69,7 +75,7 @@ class OrderInsales(BaseModel):
     source_uuid: int = Field(alias='number')
     manager_DB: Optional[int] = Field(default=None, exclude=True)
     manager_id: Optional[int] = Field(default=None)
-    ordered_at: str = Field(alias='created_at')
+    ordered_at: datetime = Field(alias='created_at')
     products: list[Product] = Field(alias='order_lines')
     discount_amount: float = Field(default=0, alias='discount')
     marketing: Utm = Field(alias='marketing')
@@ -119,6 +125,16 @@ class OrderInsales(BaseModel):
 
         return model
 
-    @field_validator('ordered_at')
+    @field_validator('ordered_at', mode='before')
     def format_date(cls, value):
-        return value.split('.')[0].replace('T', ' ')
+        if isinstance(value, datetime):
+            order_datetime = value
+        else:
+            order_datetime = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if order_datetime.tzinfo is not None:
+            order_datetime = order_datetime.astimezone(KYIV_TZ)
+        return order_datetime.replace(tzinfo=None)
+
+    @field_serializer('ordered_at')
+    def serialize_ordered_at(self, value: datetime):
+        return value.strftime('%Y-%m-%d %H:%M:%S')

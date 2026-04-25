@@ -1,7 +1,6 @@
 import time
-
-import requests
 from enum import StrEnum
+import requests
 
 REQUEST_TIMEOUT = 20
 REQUESTS_EXCEEDED_TIME_TO_SLEEP = 10
@@ -25,13 +24,15 @@ class Route(StrEnum):
 
 class KeyCRM:
     main_url = 'https://openapi.keycrm.app/v1'
+
     def __init__(self, api_key):
-        self.headers = {'Content-type': 'application/json',
-                        'Accept': 'application/json',
-                        'Cache-Control': 'no-cache',
-                        'Pragma': 'no-cache',
-                        'Authorization': f'Bearer {api_key}'
-                        }
+        self.headers = {
+            'Content-type': 'application/json',
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Authorization': f'Bearer {api_key}',
+        }
 
     def parse_and_validate_response(self, r: requests.Response) -> dict:
         r.raise_for_status()
@@ -64,9 +65,7 @@ class KeyCRM:
         :param filter: dictionary of filters
         :return: list of orders dicts
         """
-        params = {'limit': RESULTS_PER_PAGE,
-                  'include': INCLUDE_ORDER_FIELDS,
-                  }
+        params = {'limit': RESULTS_PER_PAGE, 'include': INCLUDE_ORDER_FIELDS}
 
         if filter is not None:
             for key, value in filter.items():
@@ -105,8 +104,7 @@ class KeyCRM:
         return self.make_request(Method.GET, Route.PAYMENT_METHODS, params={'limit': RESULTS_PER_PAGE})
 
     def get_offers(self) -> dict:
-        return self.make_request(Method.GET, Route.OFFERS, params={'limit': RESULTS_PER_PAGE,
-                                                                         'include': 'product'})
+        return self.make_request(Method.GET, Route.OFFERS, params={'limit': RESULTS_PER_PAGE, 'include': 'product'})
 
     def get_product(self, product_id: int | str) -> dict:
         return self.make_request(Method.GET, f'{Route.PRODUCTS}/{product_id}')
@@ -119,5 +117,3 @@ class KeyCRM:
         for order in orders:
             if str(order['source_uuid']) == str(source_uuid):
                 return order
-
-

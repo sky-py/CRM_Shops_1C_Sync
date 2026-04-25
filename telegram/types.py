@@ -7,4 +7,5 @@ class Notification:
     order_id: int
     shop_name: str
     text: str
+    source_uuid: int | None = None
     button: bool = True

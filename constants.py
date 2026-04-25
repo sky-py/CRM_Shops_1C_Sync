@@ -48,6 +48,7 @@ beauty_tg = int(get_env('beauty_tg'))
 klimazon_tg = int(get_env('klimazon_tg'))
 krasunia_tg = int(get_env('krasunia_tg'))
 lida_tg = int(get_env('lida_tg'))
+olexandra_tg = int(get_env('olexandra_tg'))
 rop_tg = int(get_env('rop_tg'))
 
 managers: dict[int, str] = {
@@ -57,6 +58,7 @@ managers: dict[int, str] = {
     klimazon_tg: 'Климазон',
     krasunia_tg: 'Елена',
     lida_tg: 'Лида',
+    olexandra_tg: 'Олександра',
 }
 
 additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина'}
@@ -70,9 +72,21 @@ jsons_archive_path = Path(get_env('backup_root_path')) / 'Backup_Json'
 # ================================================= PROM =============================================
 
 prom_shops = [
-    {'name': Shops.UKRSTIL.value, 'token': get_env('prom_ukrstil_orders_r'), 'managers': managers | additional_receivers},
-    {'name': Shops.BEAUTY_MARKET.value, 'token': get_env('prom_beauty_orders_r'), 'managers': managers | additional_receivers},
-    {'name': Shops.KRASUNIA.value, 'token': get_env('prom_krasunia_orders_r'), 'managers': managers | additional_receivers},
+    {
+        'name': Shops.UKRSTIL.value,
+        'token': get_env('prom_ukrstil_orders_r'),
+        'managers': managers | additional_receivers,
+    },
+    {
+        'name': Shops.BEAUTY_MARKET.value,
+        'token': get_env('prom_beauty_orders_r'),
+        'managers': managers | additional_receivers,
+    },
+    {
+        'name': Shops.KRASUNIA.value,
+        'token': get_env('prom_krasunia_orders_r'),
+        'managers': managers | additional_receivers,
+    },
 ]
 
 PROM_SLEEP_TIME = 5  # sec
@@ -92,7 +106,7 @@ horoshop_shops = [
     }
 ]
 
-HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1320  # minutes (twenty-four hours)
+HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1440  # minutes (twenty-four hours)
 horoshop_sleep_time = 5  # sec
 horoshop_stop_tries_after_delay = 200  # sec
 
