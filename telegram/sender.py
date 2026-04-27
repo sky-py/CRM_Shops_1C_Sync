@@ -1,4 +1,5 @@
-from typing import Iterable, Literal
+from typing import Literal
+from collections.abc import Iterable
 import constants
 from aiogram.types import InlineKeyboardMarkup
 from loguru import logger
