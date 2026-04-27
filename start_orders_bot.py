@@ -1,6 +1,6 @@
 import asyncio
 
-from telegram.app import run_bot
+from telegram.telegram_app import run_bot
 
 
 if __name__ == '__main__':

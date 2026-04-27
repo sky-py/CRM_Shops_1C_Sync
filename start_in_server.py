@@ -21,6 +21,15 @@ from telegram.sender_sync import send_service_tg_message
 
 salon = Insales(constants.UKRSALON_URL)
 reload_file = Path(__file__).with_suffix('.reload')
+REQUEST_DEBUG_HEADERS = (
+    'host',
+    'user-agent',
+    'cf-connecting-ip',
+    'cf-ray',
+    'x-forwarded-for',
+    'x-forwarded-proto',
+    'x-real-ip',
+)
 
 
 @asynccontextmanager
@@ -76,6 +85,16 @@ def init_logger() -> None:
         format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
         level='ERROR',
     )
+
+
+def get_request_debug_headers(request: Request) -> dict[str, str]:
+    return {header: request.headers[header] for header in REQUEST_DEBUG_HEADERS if header in request.headers}
+
+
+def get_request_route(request: Request) -> str:
+    if 'cf-ray' in request.headers or 'cf-connecting-ip' in request.headers:
+        return 'Cloudflare'
+    return 'direct/unknown'
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -165,6 +184,11 @@ async def process_ukrsalon_orders(request: Request):
         send_service_tg_message(f'ERROR: not json data in ukrsalon_orders webhook {__file__}\n{str(e)}')
         raise
 
+    logger.info(
+        f'Got Ukrsalon webhook request via {get_request_route(request)} '
+        f'from {request.client.host if request.client else None}: '
+        f'{get_request_debug_headers(request)}'
+    )
     logger.debug(f'Got Ukrsalon order {data.get('number')}')
 
     async with Session_async.begin() as session:
