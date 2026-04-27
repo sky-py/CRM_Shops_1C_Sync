@@ -1,7 +1,7 @@
 import asyncio
+import json
 from enum import Enum
 from functools import wraps
-import json
 import httpx
 from retry import retry
 
@@ -9,7 +9,7 @@ from retry import retry
 REQUEST_TIMEOUT = httpx.Timeout(10.0, connect=3.0)
 GET_ORDERS_REQUEST_TIMEOUT = httpx.Timeout(4.0, connect=3.0)
 REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP = 30
-ORDERS_PER_PAGE = 40
+ORDERS_PER_PAGE = 20
 
 
 class Method(Enum):
@@ -21,19 +21,19 @@ class Method(Enum):
 
 class Route(Enum):
     GET_ORDERS = '/orders.json'
-    ONE_ORDER = "/orders/{order_id}.json"
-    CLIENT = "/clients/{client_id}.json"
-    CHANGE_BONUSES = "/clients/{client_id}/bonus_system_transactions.json"
-    GET_WEBHOOKS = "/webhooks.json"
-    ONE_WEBHOOK = "/webhooks/{webhook_id}.json"
-    WAREHOUSES = "/warehouses.json"
+    ONE_ORDER = '/orders/{order_id}.json'
+    CLIENT = '/clients/{client_id}.json'
+    CHANGE_BONUSES = '/clients/{client_id}/bonus_system_transactions.json'
+    GET_WEBHOOKS = '/webhooks.json'
+    ONE_WEBHOOK = '/webhooks/{webhook_id}.json'
+    WAREHOUSES = '/warehouses.json'
 
 
-product = "/admin/products/"
-one_blog = "/admin/blogs/"  # /admin/blogs/blog#.json  то что открывается по настройкам блога
-blogs = "/admin/blogs.json"  # список блогов
-one_article = "/admin/blogs/" # /admin/blogs/blog#/articles/arcticle#.json
-articles = "/admin/blogs/"  # /admin/blogs/blog#/articles.json
+product = '/admin/products/'
+one_blog = '/admin/blogs/'  # /admin/blogs/blog#.json  то что открывается по настройкам блога
+blogs = '/admin/blogs.json'  # список блогов
+one_article = '/admin/blogs/'  # /admin/blogs/blog#/articles/arcticle#.json
+articles = '/admin/blogs/'  # /admin/blogs/blog#/articles.json
 clients = '/admin/clients.json'
 one_client = '/admin/clients/'
 reviews = '/admin/reviews.json'
@@ -41,7 +41,7 @@ reviews = '/admin/reviews.json'
 
 async def sleep_if_rate_limit_reached(response: httpx.Response) -> None:
     remaining_limits = response.headers.get('api-usage-limit')
-    print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
+    print(f'Remaining limits: {remaining_limits if remaining_limits else "Not found"}')
     if remaining_limits:
         remain, capacity = remaining_limits.split('/')
         if int(remain) / int(capacity) > 0.95:
@@ -56,11 +56,12 @@ def wait(func):
         if return_value:
             await sleep_if_rate_limit_reached(return_value)
             return return_value
+
     return wrapper
 
 
 class Insales:
-    headers = {"Content-Type": "application/json"}
+    headers = {'Content-Type': 'application/json'}
 
     def __init__(self, main_url):
         self.main_url = main_url + '/admin'
@@ -87,32 +88,33 @@ class Insales:
         return await self.make_request(Method.GET, Route.ONE_ORDER.value.format(order_id=order_id))
 
     async def write_order(self, order_id: int | str, data: dict) -> httpx.Response:
-        return await self.make_request(Method.PUT, Route.ONE_ORDER.value.format(order_id=order_id), data=json.dumps(data))
+        return await self.make_request(
+            Method.PUT, Route.ONE_ORDER.value.format(order_id=order_id), data=json.dumps(data)
+        )
 
     async def get_client(self, client_id) -> httpx.Response:
         return await self.make_request(Method.GET, Route.CLIENT.value.format(client_id=client_id))
 
     async def write_client(self, client_id, data) -> httpx.Response:
-        return await self.make_request(Method.PUT, Route.CLIENT.value.format(client_id=client_id), data=json.dumps(data))
+        return await self.make_request(
+            Method.PUT, Route.CLIENT.value.format(client_id=client_id), data=json.dumps(data)
+        )
 
     async def change_bonuses(self, client_id: int | str, number_of_bonuses: int, description: str) -> httpx.Response:
-        data = {
-            "bonus_system_transaction": {
-                "bonus_points": number_of_bonuses,
-                "description": description
-            }
-        }
-        return await self.make_request(Method.POST, Route.CHANGE_BONUSES.value.format(client_id=client_id), data=json.dumps(data))
-    
+        data = {'bonus_system_transaction': {'bonus_points': number_of_bonuses, 'description': description}}
+        return await self.make_request(
+            Method.POST, Route.CHANGE_BONUSES.value.format(client_id=client_id), data=json.dumps(data)
+        )
+
     async def get_webhooks(self) -> httpx.Response:
         return await self.make_request(Method.GET, Route.GET_WEBHOOKS.value)
-    
+
     async def create_webhook(self, data) -> httpx.Response:
         return await self.make_request(Method.POST, Route.GET_WEBHOOKS.value, data=json.dumps(data))
-    
+
     async def delete_webhook(self, webhook_id) -> httpx.Response:
         return await self.make_request(Method.DELETE, Route.ONE_WEBHOOK.value.format(webhook_id=webhook_id))
-    
+
     async def get_warehouses(self) -> httpx.Response:
         return await self.make_request(Method.GET, Route.WAREHOUSES.value)
 
