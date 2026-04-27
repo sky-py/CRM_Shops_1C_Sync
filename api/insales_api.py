@@ -7,6 +7,7 @@ from retry import retry
 
 
 REQUEST_TIMEOUT = httpx.Timeout(10.0, connect=3.0)
+GET_ORDERS_REQUEST_TIMEOUT = httpx.Timeout(4.0, connect=3.0)
 REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP = 30
 ORDERS_PER_PAGE = 40
 
@@ -38,18 +39,22 @@ one_client = '/admin/clients/'
 reviews = '/admin/reviews.json'
 
 
+async def sleep_if_rate_limit_reached(response: httpx.Response) -> None:
+    remaining_limits = response.headers.get('api-usage-limit')
+    print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
+    if remaining_limits:
+        remain, capacity = remaining_limits.split('/')
+        if int(remain) / int(capacity) > 0.95:
+            print(f'Exceeded limits, waiting {REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP} sec...')
+            await asyncio.sleep(REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP)
+
+
 def wait(func):
     @wraps(func)
     async def wrapper(*args, **kwargs) -> httpx.Response:
         return_value = await func(*args, **kwargs)
         if return_value:
-            remaining_limits = return_value.headers.get('api-usage-limit')
-            print(f'Remaining limits: {remaining_limits if remaining_limits else 'Not found'}')
-            if remaining_limits:
-                remain, capacity = remaining_limits.split('/')
-                if int(remain) / int(capacity) > 0.95:
-                    print(f'Exceeded limits, waiting {REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP} sec...')
-                    await asyncio.sleep(REQUESTS_RATE_EXCEEDED_TIME_TO_SLEEP)
+            await sleep_if_rate_limit_reached(return_value)
             return return_value
     return wrapper
 
@@ -71,7 +76,12 @@ class Insales:
 
     async def get_orders(self, page=1) -> httpx.Response:
         params = {'per_page': ORDERS_PER_PAGE, 'page': page}
-        return await self.make_request(Method.GET, Route.GET_ORDERS.value,  params=params)
+        url = self.main_url + Route.GET_ORDERS.value
+        async with httpx.AsyncClient(headers=self.headers, timeout=GET_ORDERS_REQUEST_TIMEOUT) as client:
+            r = await client.get(url=url, params=params)
+        r.raise_for_status()
+        await sleep_if_rate_limit_reached(r)
+        return r
 
     async def get_one_order(self, order_id: int | str) -> httpx.Response:
         return await self.make_request(Method.GET, Route.ONE_ORDER.value.format(order_id=order_id))

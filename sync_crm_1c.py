@@ -473,7 +473,7 @@ if __name__ == '__main__':
                 reload_file.unlink(missing_ok=True)
                 logger.info(f'SHUTTING DOWN {__file__}')
                 exit(0)
-            rich_log.sleep(constants.time_to_sleep_crm_1c)
+            rich_log.sleep(constants.TIME_TO_SLEEP_CRM_1C)
     except Exception as e:
         logger.error(f'Error in {__file__}: {e}')
     finally:

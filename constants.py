@@ -63,8 +63,8 @@ managers: dict[int, str] = {
 
 additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина', admin_tg: 'Админ'}
 
-time_to_sleep_insales_crm = 5  # sec
-time_to_sleep_crm_1c = 40  # sec
+TIME_TO_SLEEP_INSALES_CRM = 20  # sec
+TIME_TO_SLEEP_CRM_1C = 40  # sec
 
 jsons_out_path = Path('C:/Obmen/CRM/IN')
 jsons_archive_path = Path(get_env('backup_root_path')) / 'Backup_Json'
@@ -107,8 +107,8 @@ horoshop_shops = [
 ]
 
 HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1440  # minutes (twenty-four hours)
-horoshop_sleep_time = 5  # sec
-horoshop_stop_tries_after_delay = 200  # sec
+HOROSHOP_SLEEP_TIME = 5  # sec
+HOROSHOP_STOP_TRIES_AFTER_DELAY = 200  # sec
 
 # ================================================= AI =============================================
 OPENAI_UKRSALON_API_KEY = get_env('OPENAI_UKRSALON_API_KEY')

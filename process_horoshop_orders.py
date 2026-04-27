@@ -78,7 +78,7 @@ def get_timestamp(minutes_ago: int):
     return past_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
-@retry(stop_after_delay=constants.horoshop_stop_tries_after_delay)
+@retry(stop_after_delay=constants.HOROSHOP_STOP_TRIES_AFTER_DELAY)
 async def get_orders(shop_client: HoroshopClient) -> list | None:
     from_date = get_timestamp(minutes_ago=constants.HOROSHOP_TIME_INTERVAL_TO_CHECK)
     return await shop_client.get_orders(date_from=from_date, limit=1000)

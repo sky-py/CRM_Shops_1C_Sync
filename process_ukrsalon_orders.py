@@ -2,6 +2,7 @@ import asyncio
 import platform
 from contextlib import redirect_stdout
 from pathlib import Path
+import httpx
 import constants
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
@@ -115,10 +116,8 @@ def set_order_shop(order: OrderInsales) -> None:
         order.source_id = ukrsalon_crm_id
 
 
-# @retry(stop_after_delay=300, max_delay=20)
 async def get_orders() -> list[dict]:
     r = await ukrsalon.get_orders()
-    r.raise_for_status()
     orders = r.json()
     rich_log.print_request(f'{len(orders)} last orders were received')
     return orders
@@ -218,17 +217,21 @@ async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderI
 
 async def worker() -> None:
     while True:
-        with redirect_stdout(rich_log.console_to_rich_log_redirector):
-            orders = await get_orders()
-        notifications = await process_orders(orders)
-        for pair_data in notifications:
-            if pair_data[0].status_id != Status.CANCELLED.value:
-                await send_message(*pair_data)
+        try:
+            with redirect_stdout(rich_log.console_to_rich_log_redirector):
+                orders = await get_orders()
+        except httpx.HTTPError as e:
+            logger.info(f'Ukrsalon orders polling skipped: {type(e).__name__} {e}')
+        else:
+            notifications = await process_orders(orders)
+            for pair_data in notifications:
+                if pair_data[0].status_id != Status.CANCELLED.value:
+                    await send_message(*pair_data)
 
         if reload_file.exists():
             logger.info(f'Found reload file {__file__}, STOPPING Ukrsalon orders sync')
             return
-        await asyncio.to_thread(rich_log.sleep, constants.time_to_sleep_insales_crm)
+        await asyncio.to_thread(rich_log.sleep, constants.TIME_TO_SLEEP_INSALES_CRM)
 
 
 async def process_orders(orders: list):
