@@ -17,10 +17,10 @@ def get_env(var: str) -> str:
     return v
 
 
+# ================================================= DEV =============================================
 IS_PRODUCTION_SERVER = True if get_env('IS_PRODUCTION_SERVER') == 'True' else False
-DO_SEND_TO_BOT = True if get_env('DO_SEND_TO_BOT') == 'True' else False
-TG_MAX_MESSAGE_LENGTH = 4096
-
+CALLBACK_CRM_PORT = int(get_env('CALLBACK_CRM_PORT'))
+# ================================================= KEY_CRM =============================================
 CRM_API_KEY = get_env('KEY_CRM_API_KEY')
 CRM_GET_LAST_ORDERS = 200
 CRM_MAX_PROCESSING_ORDERS = 500
@@ -28,14 +28,17 @@ CRM_MINUTES_INTERVAL_TO_CHECK = 120
 CRM_ORDER_COMPLETED_STAGE_ID = 12
 CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
 
-UKRSALON_URL = get_env('UKRSALON_URL')
-CALLBACK_CRM_PORT = int(get_env('CALLBACK_CRM_PORT'))
+TIME_TO_SLEEP_CRM_1C = 40  # sec
+JSONS_OUT_PATH = Path('C:/Obmen/CRM/IN')
+JSONS_ARCHIVE_PATH = Path(get_env('backup_root_path')) / 'Backup_Json'
+# ================================================= DB =============================================
 POSTGRES_USER = get_env('POSTGRES_user')
 POSTGRES_PASSWORD = get_env('POSTGRES_password')
 SALON_DB = get_env('SALON_db')
 POSTGRES_HOST = 'localhost'
-
 # ================================================= TELEGRAM =============================================
+DO_SEND_TO_BOT = True if get_env('DO_SEND_TO_BOT') == 'True' else False
+TG_MAX_MESSAGE_LENGTH = 4096
 tg_token_salon = get_env('tg_token_salon')
 tg_token_orders = get_env('tg_token_orders')
 tg_token_tools = get_env('tg_token_tools')
@@ -51,6 +54,7 @@ lida_tg = int(get_env('lida_tg'))
 olexandra_tg = int(get_env('olexandra_tg'))
 rop_tg = int(get_env('rop_tg'))
 
+# ================================================= MANAGERS =============================================
 managers: dict[int, str] = {
     ukrstil_tg: 'Вика',
     beauty_tg: 'Наталья',
@@ -62,14 +66,14 @@ managers: dict[int, str] = {
 }
 
 additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина', admin_tg: 'Админ'}
-
-TIME_TO_SLEEP_INSALES_CRM = 20  # sec
-TIME_TO_SLEEP_CRM_1C = 40  # sec
-
-jsons_out_path = Path('C:/Obmen/CRM/IN')
-jsons_archive_path = Path(get_env('backup_root_path')) / 'Backup_Json'
-
+# ================================================== UKRSALON =============================================
+UKRSALON_URL = get_env('UKRSALON_URL')
+TIME_TO_SLEEP_INSALES_CRM = 10  # sec
 # ================================================= PROM =============================================
+PROM_SLEEP_TIME = 5  # sec
+PROM_STOP_TRIES_AFTER_DELAY_SEC = 2500  # sec
+PROM_TIME_INTERVAL_TO_CHECK_MIN = 1320  # minutes (twenty-four hours)
+PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days
 
 prom_shops = [
     {
@@ -88,14 +92,10 @@ prom_shops = [
         'managers': managers | additional_receivers,
     },
 ]
-
-PROM_SLEEP_TIME = 5  # sec
-PROM_STOP_TRIES_AFTER_DELAY_SEC = 2500  # sec
-PROM_TIME_INTERVAL_TO_CHECK_MIN = 1320  # minutes (twenty-four hours)
-PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days
-
-
 # ================================================= HOROSHOP =============================================
+HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1440  # minutes (twenty-four hours)
+HOROSHOP_SLEEP_TIME = 5  # sec
+HOROSHOP_STOP_TRIES_AFTER_DELAY = 200  # sec
 horoshop_shops = [
     {
         'name': Shops.KLIMAZON.value,
@@ -105,10 +105,5 @@ horoshop_shops = [
         'managers': managers | additional_receivers,
     }
 ]
-
-HOROSHOP_TIME_INTERVAL_TO_CHECK = 20000  # 1440  # minutes (twenty-four hours)
-HOROSHOP_SLEEP_TIME = 5  # sec
-HOROSHOP_STOP_TRIES_AFTER_DELAY = 200  # sec
-
 # ================================================= AI =============================================
 OPENAI_UKRSALON_API_KEY = get_env('OPENAI_UKRSALON_API_KEY')
