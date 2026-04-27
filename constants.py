@@ -52,16 +52,16 @@ olexandra_tg = int(get_env('olexandra_tg'))
 rop_tg = int(get_env('rop_tg'))
 
 managers: dict[int, str] = {
-    ukrsalon_tg: 'УкрСалон',  # TODO: NAME
     ukrstil_tg: 'Вика',
     beauty_tg: 'Наталья',
-    klimazon_tg: 'Климазон',
     krasunia_tg: 'Елена',
     lida_tg: 'Лида',
     olexandra_tg: 'Олександра',
+    # ukrsalon_tg: 'УкрСалон',
+    # klimazon_tg: 'Климазон',
 }
 
-additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина'}
+additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина', admin_tg: 'Админ'}
 
 time_to_sleep_insales_crm = 5  # sec
 time_to_sleep_crm_1c = 40  # sec

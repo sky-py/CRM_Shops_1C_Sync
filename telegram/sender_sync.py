@@ -21,7 +21,9 @@ def send_tg_message(text: str, users: Iterable[int]):
         print('===TEST=== ', text)
 
 
-def send_service_tg_message(text: str):
+def send_service_tg_message(text: str, silent=False):
     text = text[0:TG_MAX_MESSAGE_LENGTH]
     if DO_SEND_TO_BOT:
-        bot_tools.send_message(admin_tg, text)
+        bot_tools.send_message(admin_tg, text, disable_notification=silent)
+    else:
+        print('===TEST=== ', text)
