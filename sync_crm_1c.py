@@ -466,7 +466,6 @@ if __name__ == '__main__':
     logger.info(f'STARTING {__file__}')
     try:
         while True:
-            print('Getting CRM orders...')
             main()
             if not IS_PRODUCTION_SERVER:
                 exit(0)
