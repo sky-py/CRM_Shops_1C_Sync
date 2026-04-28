@@ -14,7 +14,7 @@ reload_file = Path(__file__).parent.parent / 'start_orders_bot.reload'
 def init_logger() -> None:
     logger.add(
         sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
         level='INFO',
         backtrace=True,
         diagnose=True,
