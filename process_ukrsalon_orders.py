@@ -2,8 +2,8 @@ import asyncio
 import platform
 from contextlib import redirect_stdout
 from pathlib import Path
-import httpx
 import constants
+import httpx
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
 from db.db_init_async import AsyncSession, Session_async, create_tables
@@ -20,6 +20,7 @@ from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
 from tools.rich_log import RichLog
 
+
 ukrsalon = Insales(constants.UKRSALON_URL)
 crm = KeyCRM(constants.CRM_API_KEY)
 
@@ -33,7 +34,7 @@ def init_logger() -> None:
     logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
     logger.add(
         sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
         level='INFO',
         backtrace=True,
         diagnose=True,

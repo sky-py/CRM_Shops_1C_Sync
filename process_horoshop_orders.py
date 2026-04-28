@@ -3,19 +3,19 @@ import platform
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-from loguru import logger
-from retry import retry
-from sqlalchemy.future import select
 import colorama
 import constants
 from api.horoshop_api_async import HoroshopClient
 from db.db_init_async import Session_async, create_tables
 from db.models import PromOrderDB
-from telegram.sender_sync import send_service_tg_message
-from parse.parse_constants import PromStatus
+from loguru import logger
 from parse.horoshop_models import OrderHoroshop
+from parse.parse_constants import PromStatus
+from retry import retry
+from sqlalchemy.future import select
 from telegram.bot import close_bot_session
 from telegram.sender import send_notification
+from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
 
 
@@ -24,10 +24,18 @@ reload_file = Path(__file__).with_suffix('.reload')
 
 
 def init_logger() -> None:
-    logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-            level='INFO', backtrace=True, diagnose=True)
-    logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-            level='ERROR')
+    logger.add(
+        sink=f'log/{Path(__file__).stem}.log',
+        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
+        level='INFO',
+        backtrace=True,
+        diagnose=True,
+    )
+    logger.add(
+        sink=lambda msg: send_service_tg_message(msg),
+        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        level='ERROR',
+    )
 
 
 async def send_message(order) -> None:
@@ -38,7 +46,7 @@ async def send_message(order) -> None:
             order_id=order.order_id,
             shop_name=order.shop,
             text=message_text,
-            button=True  # order.status == PromStatus.NEW,
+            button=True,  # order.status == PromStatus.NEW,
         )
     )
     logger.info(message_text.replace('\n', ' '))
@@ -51,35 +59,39 @@ def generate_message_text(order: OrderHoroshop):
         case _:
             state = 'НОВЫЙ'  # 'Принят'
 
-    send_text = (f'{state} заказ {order.order_id} на {order.shop}\n'
-                 f'Сумма: {order.total_price} грн.\n'
-                 f'Клиент: {order.buyer.full_name} \n'
-                 f'Телефон: {order.buyer.phone}')
+    send_text = (
+        f'{state} заказ {order.order_id} на {order.shop}\n'
+        f'Сумма: {order.total_price} грн.\n'
+        f'Клиент: {order.buyer.full_name} \n'
+        f'Телефон: {order.buyer.phone}'
+    )
     return send_text
 
 
 async def add_order_to_db(order: OrderHoroshop, session: Session_async):
-    session.add(PromOrderDB(
-        order_id=order.order_id,
-        status=order.status,
-        shop=order.shop,
-        is_accepted=False if order.status == PromStatus.NEW else True,
-        ordered_at=order.date_created
-    ))
+    session.add(
+        PromOrderDB(
+            order_id=order.order_id,
+            status=order.status,
+            shop=order.shop,
+            is_accepted=False if order.status == PromStatus.NEW else True,
+            ordered_at=order.date_created,
+        )
+    )
 
 
 def get_color(shop: dict) -> str:
     i = constants.horoshop_shops.index(shop)
-    return f'\033[{31+i%6}m'
+    return f'\033[{31 + i % 6}m'
 
 
 def get_timestamp(minutes_ago: int):
     past_time = datetime.now() - timedelta(minutes=minutes_ago)
-    return past_time.strftime("%Y-%m-%d %H:%M:%S")
+    return past_time.strftime('%Y-%m-%d %H:%M:%S')
 
 
 @retry(stop_after_delay=constants.HOROSHOP_STOP_TRIES_AFTER_DELAY)
-async def get_orders(shop_client: HoroshopClient) -> list | None:
+async def get_orders(shop_client: HoroshopClient) -> list:
     from_date = get_timestamp(minutes_ago=constants.HOROSHOP_TIME_INTERVAL_TO_CHECK)
     return await shop_client.get_orders(date_from=from_date, limit=1000)
 

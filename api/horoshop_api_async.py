@@ -40,7 +40,7 @@ class HoroshopClient:
 
     async def make_request(self, route: Route, data: Optional[dict] = None) -> dict:
         if data is None:
-            data = dict()
+            data = {}
         data['token'] = self.token
         r = await self.client.post(url=f'{self.main_url}{route.value}',
                              json=data,
@@ -49,7 +49,7 @@ class HoroshopClient:
         return parsed_data
 
     async def get_orders(self, limit: int = None, date_from: str = None, date_to: str = None) -> list:
-        data = dict()
+        data = {}
         if limit:
             data['limit'] = limit
         if date_from:

@@ -7,16 +7,16 @@ from typing import Optional
 import colorama
 import constants
 from api.prom_api_async import PromClient
-from db.db_init_async import Session_async, create_tables, AsyncSession
-from db.models import PromCPARefundOutbox, PromOrderDB, PromDeliveryCommissionOutbox
+from db.db_init_async import AsyncSession, Session_async, create_tables
+from db.models import PromCPARefundOutbox, PromDeliveryCommissionOutbox, PromOrderDB
 from loguru import logger
-from telegram.sender_sync import send_service_tg_message
 from parse.parse_constants import PromStatus
 from parse.parse_prom_order import OrderProm
 from retry import retry
 from sqlalchemy.future import select
 from telegram.bot import close_bot_session
 from telegram.sender import send_notification
+from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
 
 
@@ -27,7 +27,7 @@ reload_file = Path(__file__).with_suffix('.reload')
 def init_logger() -> None:
     logger.add(
         sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
         level='INFO',
         backtrace=True,
         diagnose=True,
@@ -49,7 +49,7 @@ async def send_message(order):
             order_id=order.order_id,
             shop_name=order.shop,
             text=message_text,
-            button=True  # order.status in [PromStatus.NEW, PromStatus.PAID],
+            button=True,  # order.status in [PromStatus.NEW, PromStatus.PAID],
         )
     )
     logger.info(message_text.replace('\n', ' '))
@@ -75,13 +75,13 @@ def generate_message_text(order: OrderProm):
 
 async def add_order_to_db(order: OrderProm, session: AsyncSession):
     order_db = PromOrderDB(
-            order_id=order.order_id,
-            status=order.status,
-            shop=order.shop,
-            is_accepted=False if order.status == PromStatus.NEW or order.status == PromStatus.PAID else True,
-            cpa_commission=order.cpa_commission,
-            ordered_at=order.date_created,
-        )
+        order_id=order.order_id,
+        status=order.status,
+        shop=order.shop,
+        is_accepted=False if order.status == PromStatus.NEW or order.status == PromStatus.PAID else True,
+        cpa_commission=order.cpa_commission,
+        ordered_at=order.date_created,
+    )
     session.add(order_db)
     await session.flush()
     logger.info(f'Added {order.shop}:{order.order_id} to db. Order = {order}')
@@ -94,8 +94,14 @@ async def add_order_to_cpa_commission_outbox(order: OrderProm, session: AsyncSes
 
 
 async def add_order_to_delivery_commission_outbox(order: OrderProm, session: AsyncSession):
-    session.add(PromDeliveryCommissionOutbox(order_id=order.order_id, shop=order.shop, delivery_commission=order.delivery_commision))
-    logger.info(f'Added {order.shop}:{order.order_id} with delivery commission {order.delivery_commision} to delivery commission queue')
+    session.add(
+        PromDeliveryCommissionOutbox(
+            order_id=order.order_id, shop=order.shop, delivery_commission=order.delivery_commision
+        )
+    )
+    logger.info(
+        f'Added {order.shop}:{order.order_id} with delivery commission {order.delivery_commision} to delivery commission queue'
+    )
 
 
 def get_color(shop: dict) -> str:
@@ -104,8 +110,9 @@ def get_color(shop: dict) -> str:
 
 
 def order_date_is_valid(date: str) -> bool:
-    return datetime.fromisoformat(date).replace(tzinfo=None) > (datetime.now() -
-            timedelta(days=constants.PROM_CONSIDER_ORDER_FINISHED_DAYS))
+    return datetime.fromisoformat(date).replace(tzinfo=None) > (
+        datetime.now() - timedelta(days=constants.PROM_CONSIDER_ORDER_FINISHED_DAYS)
+    )
 
 
 @retry(stop_after_delay=constants.PROM_STOP_TRIES_AFTER_DELAY_SEC)
@@ -117,7 +124,9 @@ async def get_orders(shop_client: PromClient) -> Optional[list]:
         orders = await shop_client.get_orders(last_modified_from=last_modified_from, limit=1000)
         return [order for order in orders if order_date_is_valid(order['date_created'])]
     else:  # for getting ALL orders from date
-        orders = await shop_client.get_orders(created_from=datetime(year=2025, month=7, day=1), created_to=datetime.now(), limit=1000)
+        orders = await shop_client.get_orders(
+            created_from=datetime(year=2025, month=7, day=1), created_to=datetime.now(), limit=1000
+        )
         return orders
 
 
@@ -166,8 +175,8 @@ def order_was_accepted(order, order_db) -> bool:
         order_db.is_accepted = True
         return True
     return False
-        
-        
+
+
 def update_order_status(order, order_db):
     if order.status != order_db.status:
         order_db.status = order.status
@@ -177,16 +186,20 @@ async def process_cpa_refund(order, order_db, session):
     if order.cpa_is_refunded and not order_db.cpa_is_refunded:
         order_db.cpa_is_refunded = True
         await add_order_to_cpa_commission_outbox(order, session)
-        logger.info(f'Updated CPA refund status for {order.shop}:{order.order_id} to {order.cpa_is_refunded} '
-                    f'and added to CPA refund outbox.')
+        logger.info(
+            f'Updated CPA refund status for {order.shop}:{order.order_id} to {order.cpa_is_refunded} '
+            f'and added to CPA refund outbox.'
+        )
 
 
 async def process_delivery_commission(order, order_db, session):
     if order.status == PromStatus.SUCCESS and order.delivery_commision != order_db.delivery_commission:
         order_db.delivery_commission = order.delivery_commision
         await add_order_to_delivery_commission_outbox(order, session)
-        logger.info(f'Updated delivery commission for {order.shop}:{order.order_id} to {order.delivery_commision} '
-                    f'and added to delivery commission outbox.')
+        logger.info(
+            f'Updated delivery commission for {order.shop}:{order.order_id} to {order.delivery_commision} '
+            f'and added to delivery commission outbox.'
+        )
 
 
 def process_order_commission(order, order_db):

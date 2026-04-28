@@ -75,7 +75,7 @@ def init_logger() -> None:
     logger.add(sys.stdout, level='INFO')
     logger.add(
         sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
+        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
         level='DEBUG',
         backtrace=True,
         diagnose=True,
