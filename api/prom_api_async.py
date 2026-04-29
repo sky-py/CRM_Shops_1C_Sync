@@ -1,6 +1,5 @@
 import json
 from datetime import datetime, timedelta
-from typing import Optional
 import httpx
 import asyncio
 
@@ -46,10 +45,10 @@ class PromClient:
     async def get_orders(
         self,
         limit: int = PROM_OUTPUT_LIMIT,
-        last_modified_from: Optional[datetime] = None,
-        last_modified_to: Optional[datetime] = None,
-        created_from: Optional[datetime] = None,
-        created_to: Optional[datetime] = None,
+        last_modified_from: datetime | None = None,
+        last_modified_to: datetime | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> list:
         """
         :param limit: Обмеження кількості замовлень у відповіді.

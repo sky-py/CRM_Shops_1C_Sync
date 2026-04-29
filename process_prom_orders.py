@@ -3,8 +3,6 @@ import platform
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
-import colorama
 import constants
 from api.prom_api_async import PromClient
 from db.db_init_async import AsyncSession, Session_async, create_tables
@@ -18,6 +16,7 @@ from telegram.bot import close_bot_session
 from telegram.sender import send_notification
 from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
+from tools.rich_log import RichLogMulti
 
 
 bad_orders = []
@@ -25,6 +24,8 @@ reload_file = Path(__file__).with_suffix('.reload')
 
 
 def init_logger() -> None:
+    logger.remove()
+    logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=False)
     logger.add(
         sink=f'log/{Path(__file__).stem}.log',
         format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
@@ -52,7 +53,6 @@ async def send_message(order):
             button=True,  # order.status in [PromStatus.NEW, PromStatus.PAID],
         )
     )
-    logger.info(message_text.replace('\n', ' '))
 
 
 def generate_message_text(order: OrderProm):
@@ -84,13 +84,12 @@ async def add_order_to_db(order: OrderProm, session: AsyncSession):
     )
     session.add(order_db)
     await session.flush()
-    logger.info(f'Added {order.shop}:{order.order_id} to db. Order = {order}')
+    logger.info(f'Added {order.shop}:{order.order_id} to db')
     return order_db
 
 
 async def add_order_to_cpa_commission_outbox(order: OrderProm, session: AsyncSession):
     session.add(PromCPARefundOutbox(order_id=order.order_id, shop=order.shop, cpa_commission=order.cpa_commission))
-    logger.info(f'Added {order.shop}:{order.order_id} with CPA commission {order.cpa_commission} to cpa refund queue')
 
 
 async def add_order_to_delivery_commission_outbox(order: OrderProm, session: AsyncSession):
@@ -99,14 +98,6 @@ async def add_order_to_delivery_commission_outbox(order: OrderProm, session: Asy
             order_id=order.order_id, shop=order.shop, delivery_commission=order.delivery_commision
         )
     )
-    logger.info(
-        f'Added {order.shop}:{order.order_id} with delivery commission {order.delivery_commision} to delivery commission queue'
-    )
-
-
-def get_color(shop: dict) -> str:
-    i = constants.prom_shops.index(shop)
-    return f'\033[{31 + i % 6}m'
 
 
 def order_date_is_valid(date: str) -> bool:
@@ -116,7 +107,7 @@ def order_date_is_valid(date: str) -> bool:
 
 
 @retry(stop_after_delay=constants.PROM_STOP_TRIES_AFTER_DELAY_SEC)
-async def get_orders(shop_client: PromClient) -> Optional[list]:
+async def get_orders(shop_client: PromClient) -> list:
     last_modified_from = None
     # comment next line for getting ALL orders
     last_modified_from = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK_MIN)
@@ -132,27 +123,26 @@ async def get_orders(shop_client: PromClient) -> Optional[list]:
 
 async def worker(shop: dict):
     shop_client = PromClient(shop['token'])
-    color = get_color(shop)
     shop_name = shop['name']
-    print(color + f'START PROM {shop_name} ')
-    await asyncio.sleep(random.randint(0, constants.PROM_SLEEP_TIME))
+    logger.info(f'START PROM {shop_name} ')
+    await asyncio.sleep(random.randint(0, 2))
     while True:
         try:
             orders = await get_orders(shop_client)
         except Exception as e:
             logger.error(f'Problem with {shop_name} - {e}')
             continue
-        # print(f'{shop_name} got {len(orders)} orders')  # for testing purposes
-        await process_orders(orders, shop_name, color)
-        print(color + f'PROM {shop_name} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')
+        rich_log.print_to_request_area(shop_name, f'{len(orders)} orders were received')
+        await process_orders(orders, shop_name)
+        # logger.info(f'PROM {shop_name} - OK. Sleeping for {constants.PROM_SLEEP_TIME} seconds')
         if reload_file.exists():
             logger.info(f'Found reload file {__file__}, STOPPING {shop_name} thread')
             return
-        await asyncio.sleep(constants.PROM_SLEEP_TIME)
+        await asyncio.to_thread(rich_log.sleep, shop_name, constants.PROM_SLEEP_TIME)
         # await asyncio.sleep(3600) # for testing purposes, remove in production
 
 
-async def process_orders(orders: list, shop_name: str, color: str):
+async def process_orders(orders: list, shop_name: str):
     notifications = []
     async with Session_async() as session:
         async with session.begin():
@@ -213,6 +203,7 @@ async def process_one_order(order: OrderProm, session: AsyncSession):
     result = await session.execute(select(PromOrderDB).filter_by(order_id=order.order_id))
     order_db = result.scalars().first()
     if order_db is None:
+        logger.info(f'Got new order {order.shop}:{order.order_id} => {order}')
         order_db = await add_order_to_db(order, session)
         notifications.append(order)
 
@@ -234,8 +225,12 @@ async def main():
 
 
 if __name__ == '__main__':
+    rich_log = RichLogMulti(
+        header=f'Синхронизация Prom с CRM       {__file__}',
+        shop_names=[shop['name'] for shop in constants.prom_shops],
+        header_style='bold white on magenta',
+    )
     init_logger()
-    colorama.init()
     logger.info(f'STARTING {__file__}')
 
     if platform.system() == 'Windows':
@@ -247,3 +242,4 @@ if __name__ == '__main__':
     finally:
         reload_file.unlink(missing_ok=True)
         logger.info(f'SHUTTING DOWN {__file__}')
+        rich_log.stop()
