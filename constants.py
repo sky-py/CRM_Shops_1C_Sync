@@ -65,7 +65,7 @@ managers: dict[int, str] = {
     # klimazon_tg: 'Климазон',
 }
 
-additional_receivers = {director_tg: 'Маша', rop_tg: 'Галина', admin_tg: 'Админ'}
+additional_receivers = {rop_tg: 'Галина', admin_tg: 'Админ'}
 # ================================================== UKRSALON =============================================
 UKRSALON_URL = get_env('UKRSALON_URL')
 TIME_TO_SLEEP_INSALES_CRM = 10  # sec

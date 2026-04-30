@@ -66,7 +66,7 @@ def generate_message_text(order: OrderProm):
 
     send_text = (
         f'{state} заказ {order.order_id} на {order.shop}\n'
-        f'Сумма: {order.total_price} грн.\n'
+        f'Сумма: {int(order.total_price)} грн.\n'
         f'Клиент: {order.buyer.full_name} \n'
         f'Телефон: {order.buyer.phone}'
     )
