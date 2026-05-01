@@ -130,34 +130,15 @@ def replace_zero_price(order: OrderInsales) -> None:
             product.price = PRODUCT_MIN_PRICE
 
 
-async def create_or_get_crm_order(order: OrderInsales, order_dict: dict) -> dict | None:
-    if not constants.IS_PRODUCTION_SERVER:
-        return {'id': 1}
-
-    replace_zero_price(order)  # CRM doesn't allow 0 price
-
-    try:
-        crm_reply = await asyncio.to_thread(crm.new_order, order.model_dump())
-    except Exception as e:
-        logger.error(
-            f'Error inserting Insales order {order.source_uuid} to CRM => {response_details_from_exception(e)}'
-        )
-        return None
-
-    errors = crm_reply.get('errors', {})
-    if not errors:
-        return crm_reply
-    # {'errors': {'payments.0.amount': ['The payments.0.amount must be at least 0.01.']}, 'message': 'The payments.0.amount must be at least 0.01.'}
+async def process_crm_errors(errors: dict, order: OrderInsales) -> dict | None:
     source_uuid_errors = errors.get('source_uuid', [])
     if SOURCE_UUID_TAKEN_ERROR not in source_uuid_errors:
-        logger.error(f'Got unknown error from CRM for order {order_dict["number"]} {errors}')
+        logger.error(f'Got unknown error from CRM for order {order.source_uuid} {errors}')
         return None
 
-    logger.info(
-        f'Error inserting order {order.source_uuid} to CRM: {SOURCE_UUID_TAKEN_ERROR}. Trying to get order from CRM...'
-    )
+    logger.info(f'Error inserting order {order.source_uuid} to CRM: {SOURCE_UUID_TAKEN_ERROR}. Trying to get order from CRM...')
     try:
-        crm_orders = await asyncio.to_thread(crm.get_orders, filter={'source_uuid': order_dict['number']})
+        crm_orders = await asyncio.to_thread(crm.get_orders, filter={'source_uuid': order.source_uuid})
     except Exception as e:
         logger.error(f'Error getting id {order.source_uuid} from CRM => {e}')
         return None
@@ -167,7 +148,46 @@ async def create_or_get_crm_order(order: OrderInsales, order_dict: dict) -> dict
         return None
 
     logger.info(f'Successfully got id {order.source_uuid} from CRM')
+
     return crm_orders[0]
+
+
+def get_crm_errors_from_exception(e: Exception) -> dict:
+    response = getattr(e, 'response', None)
+    if response is None:
+        return {}
+
+    try:
+        data = response.json()
+    except ValueError:
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return data.get('errors', {})
+
+
+async def create_or_get_crm_order(order: OrderInsales) -> dict | None:
+    if not constants.IS_PRODUCTION_SERVER:
+        return {'id': 1}
+
+    replace_zero_price(order)  # CRM doesn't allow 0 price
+
+    try:
+        crm_reply = await asyncio.to_thread(crm.new_order, order.model_dump())
+    except Exception as e:
+        errors = get_crm_errors_from_exception(e)
+        if errors:
+            return await process_crm_errors(errors, order)
+        logger.error(f'Error inserting Insales order {order.source_uuid} to CRM => {response_details_from_exception(e)}')
+        return None
+
+    errors = crm_reply.get('errors', {})
+    if not errors:
+        return crm_reply
+    return await process_crm_errors(errors, order)
+    # {'errors': {'payments.0.amount': ['The payments.0.amount must be at least 0.01.']}, 'message': 'The payments.0.amount must be at least 0.01.'}
 
 
 async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderInsales, int] | None:
@@ -180,7 +200,7 @@ async def process_order(order_dict: dict, session: AsyncSession) -> tuple[OrderI
             logger.error(f'Error parsing order {order_dict.get("number")}: {e}')
             return None
         set_order_shop(order)
-        crm_reply = await create_or_get_crm_order(order, order_dict)
+        crm_reply = await create_or_get_crm_order(order)
         if crm_reply is None:
             return None
         try:
