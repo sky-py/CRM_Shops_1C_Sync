@@ -17,9 +17,19 @@ def get_env(var: str) -> str:
     return v
 
 
+def get_env_bool(var: str) -> bool:
+    value = get_env(var).lower()
+    if value in {'1', 'true', 'yes', 'on'}:
+        return True
+    if value in {'0', 'false', 'no', 'off'}:
+        return False
+    raise ValueError(f'Environment variable {var} must be boolean, got {value!r}')
+
+
 # ================================================= DEV =============================================
-IS_PRODUCTION_SERVER = True if get_env('IS_PRODUCTION_SERVER') == 'True' else False
+IS_PRODUCTION_SERVER = get_env_bool('IS_PRODUCTION_SERVER')
 CALLBACK_CRM_PORT = int(get_env('CALLBACK_CRM_PORT'))
+LOG_DIR = Path(__file__).resolve().parent / 'log'
 # ================================================= KEY_CRM =============================================
 CRM_API_KEY = get_env('KEY_CRM_API_KEY')
 CRM_GET_LAST_ORDERS = 200

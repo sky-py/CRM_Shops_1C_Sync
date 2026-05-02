@@ -1,6 +1,7 @@
 from aiogram import Bot
 from constants import tg_token_orders
 
+
 orders_bot = Bot(token=tg_token_orders)
 
 

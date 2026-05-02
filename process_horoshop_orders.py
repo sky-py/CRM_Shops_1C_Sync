@@ -34,7 +34,6 @@ async def send_message(order) -> None:
             button=True,  # order.status == PromStatus.NEW,
         )
     )
-    logger.info(message_text.replace('\n', ' '))
 
 
 def generate_message_text(order: OrderHoroshop):
@@ -46,7 +45,7 @@ def generate_message_text(order: OrderHoroshop):
 
     send_text = (
         f'{state} заказ {order.order_id} на {order.shop}\n'
-        f'Сумма: {order.total_price} грн.\n'
+        f'Сумма: {int(order.total_price)} грн.\n'
         f'Клиент: {order.buyer.full_name} \n'
         f'Телефон: {order.buyer.phone}'
     )
@@ -139,7 +138,7 @@ async def main() -> None:
 
 if __name__ == '__main__':
     rich_log = RichLogMulti(
-        header=f'Синхронизация Horoshop с CRM       {__file__}',
+        header=f'Заказы Horoshop - {__file__}',
         shop_names=[shop['name'] for shop in constants.horoshop_shops],
         header_style='bold white on green',
     )

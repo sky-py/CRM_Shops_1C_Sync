@@ -1,11 +1,11 @@
 import inspect
 from pathlib import Path
 from typing import Protocol
+from constants import LOG_DIR
 from loguru import logger
 from telegram.sender_sync import send_service_tg_message
 
 
-DEFAULT_LOG_DIR = Path(__file__).resolve().parent.parent / 'log'
 LOG_ROTATION = '1 month'
 LOG_RETENTION = '1 year'
 LOG_FORMAT = '{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}'
@@ -39,7 +39,7 @@ def short_log_formatter(cut_after: str | None):
 
 
 def logger_init(
-    log_dir: Path = DEFAULT_LOG_DIR,
+    log_dir: Path = LOG_DIR,
     rich_log: RichLogger | None = None,
     log_name: str | None = None,
     rich_log_colorize: bool = True,

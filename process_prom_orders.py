@@ -141,6 +141,24 @@ async def process_orders(orders: list, shop_name: str):
         await send_message(order)
 
 
+async def process_one_order(order: OrderProm, session: AsyncSession):
+    notifications = []
+    result = await session.execute(select(PromOrderDB).filter_by(order_id=order.order_id))
+    order_db = result.scalars().first()
+    if order_db is None:
+        logger.info(f'Got new order {order.shop}:{order.order_id} => {order}')
+        order_db = await add_order_to_db(order, session)
+        notifications.append(order)
+
+    # if order_was_accepted(order, order_db):
+    #     notifications.append(order)
+    update_order_status(order, order_db)
+    await process_cpa_refund(order, order_db, session)
+    await process_delivery_commission(order, order_db, session)
+    process_order_commission(order, order_db)
+    return notifications
+
+
 def order_was_accepted(order, order_db) -> bool:
     if not order_db.is_accepted and order.status not in [PromStatus.NEW, PromStatus.PAID]:
         order_db.is_accepted = True
@@ -179,24 +197,6 @@ def process_order_commission(order, order_db):
         logger.info(f'Updated order commission for {order.shop}:{order.order_id} to {order.order_commission}')
 
 
-async def process_one_order(order: OrderProm, session: AsyncSession):
-    notifications = []
-    result = await session.execute(select(PromOrderDB).filter_by(order_id=order.order_id))
-    order_db = result.scalars().first()
-    if order_db is None:
-        logger.info(f'Got new order {order.shop}:{order.order_id} => {order}')
-        order_db = await add_order_to_db(order, session)
-        notifications.append(order)
-
-    # if order_was_accepted(order, order_db):
-    #     notifications.append(order)
-    update_order_status(order, order_db)
-    await process_cpa_refund(order, order_db, session)
-    await process_delivery_commission(order, order_db, session)
-    process_order_commission(order, order_db)
-    return notifications
-
-
 async def main():
     try:
         await create_tables()
@@ -207,7 +207,7 @@ async def main():
 
 if __name__ == '__main__':
     rich_log = RichLogMulti(
-        header=f'Синхронизация Prom с CRM       {__file__}',
+        header=f'Заказы Prom - {__file__}',
         shop_names=[shop['name'] for shop in constants.prom_shops],
         header_style='bold white on magenta',
     )
