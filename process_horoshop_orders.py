@@ -143,7 +143,7 @@ if __name__ == '__main__':
         shop_names=[shop['name'] for shop in constants.horoshop_shops],
         header_style='bold white on green',
     )
-    logger_init(rich_log=rich_log, rich_log_colorize=False)
+    logger_init(rich_log=rich_log, rich_log_colorize=False, log_cut_after='=>')
     logger.info(f'STARTING {__file__}')
 
     if platform.system() == 'Windows':

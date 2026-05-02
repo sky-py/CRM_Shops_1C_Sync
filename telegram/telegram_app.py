@@ -21,7 +21,7 @@ async def reload_file_watcher(dp: Dispatcher) -> None:
 
 
 async def run_bot() -> None:
-    logger_init(log_cut_after=None)
+    logger_init()
     logger.info(f'STARTING {__file__}')
     watcher_task = None
     try:

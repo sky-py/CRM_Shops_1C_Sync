@@ -184,7 +184,7 @@ async def process_ukrsalon_orders(request: Request):
 
 
 if __name__ == '__main__':
-    logger_init(log_cut_after=None)
+    logger_init()
     logger.info('Starting server for RECEIVING CRM Webhooks')
     try:
         asyncio.run(run_server())

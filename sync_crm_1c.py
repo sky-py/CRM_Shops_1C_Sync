@@ -469,7 +469,7 @@ def process_delivery_fees(session: Session):
 
 if __name__ == '__main__':
     rich_log = RichLog(header=f'Синхронизация CRM с 1С       {__file__}', header_style='bold white on cyan')
-    logger_init(rich_log=rich_log)
+    logger_init(rich_log=rich_log, log_cut_after='=>')
     logger.info(f'STARTING {__file__}')
     try:
         while True:

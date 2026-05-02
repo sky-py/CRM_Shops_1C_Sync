@@ -27,7 +27,7 @@ def get_caller_log_name() -> str:
         del frame
 
 
-def short_log_formatter(cut_after: str | None = '=>'):
+def short_log_formatter(cut_after: str | None):
     def formatter(record) -> str:
         message = record['message']
         if cut_after is not None:
@@ -43,7 +43,7 @@ def logger_init(
     rich_log: RichLogger | None = None,
     log_name: str | None = None,
     rich_log_colorize: bool = True,
-    log_cut_after: str | None = '=>',
+    log_cut_after: str | None = None,
 ) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_name = log_name or get_caller_log_name()

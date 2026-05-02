@@ -258,7 +258,7 @@ async def main() -> None:
 
 if __name__ == '__main__':
     rich_log = RichLog(header=f'Синхронизация Укрсалона с CRM       {__file__}')
-    logger_init(rich_log=rich_log)
+    logger_init(rich_log=rich_log, log_cut_after='=>')
     logger.info(f'STARTING {__file__}')
 
     if platform.system() == 'Windows':
