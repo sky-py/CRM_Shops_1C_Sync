@@ -6,6 +6,7 @@ import constants
 import httpx
 from api.insales_api import Insales
 from api.key_crm_api import KeyCRM
+from config.logging import logger_init
 from db.db_init_async import AsyncSession, Session_async, create_tables
 from db.models import UkrsalonOrderDB
 from exceptions import response_details_from_exception
@@ -16,7 +17,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from telegram.bot import close_bot_session
 from telegram.sender import send_notification
-from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
 from tools.rich_log import RichLog
 
@@ -27,23 +27,6 @@ crm = KeyCRM(constants.CRM_API_KEY)
 reload_file = Path(__file__).with_suffix('.reload')
 PRODUCT_MIN_PRICE = 0.01
 SOURCE_UUID_TAKEN_ERROR = 'The source uuid has already been taken.'
-
-
-def init_logger() -> None:
-    logger.remove()
-    logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
-    logger.add(
-        sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
-        level='INFO',
-        backtrace=True,
-        diagnose=True,
-    )
-    logger.add(
-        sink=lambda msg: send_service_tg_message(msg),
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-        level='ERROR',
-    )
 
 
 async def send_message(order: OrderInsales, key_crm_id: int):
@@ -275,7 +258,7 @@ async def main() -> None:
 
 if __name__ == '__main__':
     rich_log = RichLog(header=f'Синхронизация Укрсалона с CRM       {__file__}')
-    init_logger()
+    logger_init(rich_log=rich_log)
     logger.info(f'STARTING {__file__}')
 
     if platform.system() == 'Windows':

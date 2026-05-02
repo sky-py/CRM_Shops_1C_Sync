@@ -1,18 +1,21 @@
 import json
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Literal, Optional
 import constants
-from contextlib import redirect_stdout
 from api.key_crm_api import KeyCRM
+from config.logging import logger_init
 from constants import IS_PRODUCTION_SERVER
-from db.db_init import Session_Sync, Session
-from db.models import Order1CDB, PromCPARefundOutbox, PromOrderDB, PromDeliveryCommissionOutbox
+from db.db_init import Session, Session_Sync
+from db.models import Order1CDB, PromCPARefundOutbox, PromDeliveryCommissionOutbox, PromOrderDB
 from db.sql_init import add_ttn_to_db
 from loguru import logger
-from telegram.sender_sync import send_service_tg_message
 from parse.ai import ai_reorder_names
+from parse.parse_constants import FAKE_SUPPLIER, TTN_SENT_BY_CAR, PromStatus
 from parse.parse_key_crm_order import (
+    FakeProductBuyer,
+    FakeProductSupplier,
     Order1CBuyer,
     Order1CPostupleniye,
     Order1CReturnTovarov,
@@ -21,30 +24,19 @@ from parse.parse_key_crm_order import (
     Order1CSupplierUpdate,
     ProductBuyer,
     ProductCommissionProSale,
-    ProductCommissionProSaleFreeDelivery,
     ProductCommissionProSaleForOrder,
-    FakeProductBuyer,
-    FakeProductSupplier
+    ProductCommissionProSaleFreeDelivery,
 )
-from tools.rich_log import RichLog
-from parse.parse_constants import TTN_SENT_BY_CAR, FAKE_SUPPLIER, PromStatus
 from retry import retry
 from send_sms import send_ttn_sms
+from tools.rich_log import RichLog
+
 
 crm = KeyCRM(constants.CRM_API_KEY)
-rich_log = RichLog(header=f'Синхронизация CRM с 1С       {__file__}', header_style='bold white on cyan')
-
 parse_errors_orders_ids = []
 reload_file = Path(__file__).with_suffix('.reload')
 constants.JSONS_OUT_PATH.mkdir(parents=True, exist_ok=True)
 constants.JSONS_ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
-
-logger.remove()
-logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=True)
-logger.add(sink=f'log/{Path(__file__).stem}.log', format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-           level='INFO', backtrace=True, diagnose=True)
-logger.add(sink=lambda msg: send_service_tg_message(msg), format="{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}",
-           level='ERROR')
 
 
 def find_all_tree_orders_any_level(order_dict: dict, crm_orders: list[dict]) -> list[dict]:
@@ -75,7 +67,7 @@ def find_unique_tree_products(tree_orders: list[dict]) -> list[dict]:
                 unique_products.append(product)
                 skus.append(product['sku'])
     return unique_products
-    
+
 
 def find_root_order_id(order_dict: dict, crm_orders: list[dict]) -> int:
     orders_map = {order['id']: order for order in crm_orders}
@@ -88,8 +80,8 @@ def find_root_order_id(order_dict: dict, crm_orders: list[dict]) -> int:
                 curr_order_id = curr_order['parent_id']
         else:
             return find_root_order_id_via_api(curr_order_id)
-    
-    
+
+
 def find_root_order_id_via_api(order_id: int) -> int:
     order = crm.get_order(order_id)
     while True:
@@ -120,12 +112,14 @@ def normalize_fio(fio: str) -> str:
             return fio
 
 
-def create_json_file(order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye,
-                     include_keys=None, exclude_keys=None):
+def create_json_file(
+    order: Order1CBuyer | Order1CSupplierPromCommissionOrder | Order1CPostupleniye, include_keys=None, exclude_keys=None
+):
     if type(order) is Order1CBuyer:
         order.buyer.full_name = normalize_fio(order.buyer.full_name)
-    text = json.dumps(order.model_dump(mode='json', include=include_keys, exclude=exclude_keys),
-                      ensure_ascii=False, indent=4)
+    text = json.dumps(
+        order.model_dump(mode='json', include=include_keys, exclude=exclude_keys), ensure_ascii=False, indent=4
+    )
     json_file = f'{order.key_crm_id}_{order.action}_{datetime.now().timestamp()}.json'
     (constants.JSONS_ARCHIVE_PATH / json_file).write_text(data=text, encoding='utf-8')
     (constants.JSONS_OUT_PATH / json_file).write_text(data=text, encoding='utf-8')
@@ -144,13 +138,14 @@ def add_to_track_and_sms(order: Order1CSupplier, old_ttn_number: Optional[str] =
     #     pass
     phone = order.buyer.phone if order.shipping.recipient_phone is None else order.shipping.recipient_phone
     fio = order.buyer.full_name if order.shipping.recipient_full_name is None else order.shipping.recipient_full_name
-    if add_ttn_to_db(ttn_number=order.tracking_code,
-                     shop_sql_id=order.shop_sql_id,
-                     fio=fio,
-                     phone=phone,
-                     manager=order.manager,
-                     old_ttn_number=old_ttn_number
-                     ):
+    if add_ttn_to_db(
+        ttn_number=order.tracking_code,
+        shop_sql_id=order.shop_sql_id,
+        fio=fio,
+        phone=phone,
+        manager=order.manager,
+        old_ttn_number=old_ttn_number,
+    ):
         send_ttn_sms(phone=phone, tracking_code=order.tracking_code, shop_sql_id=order.shop_sql_id)
 
 
@@ -180,17 +175,14 @@ def get_orders_by_stage(stage_id: int = constants.CRM_ORDER_COMPLETED_STAGE_ID) 
     Returns list of all completed orders from CRM.
     Completed orders are orders that have reached the completed stage.
     """
-    orders = crm.get_orders(
-        last_orders_amount=constants.CRM_GET_LAST_ORDERS,
-        filter={'status_id': stage_id},
-    )
+    orders = crm.get_orders(last_orders_amount=constants.CRM_GET_LAST_ORDERS, filter={'status_id': stage_id})
     return orders
 
 
 @retry(stop_after_delay=120)
-def get_interval_orders(*, start: datetime,
-                        end: Optional[datetime] = None, 
-                        filter_on: Literal['created', 'updated'] = 'updated') -> list:
+def get_interval_orders(
+    *, start: datetime, end: Optional[datetime] = None, filter_on: Literal['created', 'updated'] = 'updated'
+) -> list:
     end = end or datetime.now(timezone.utc)
     time_window = f'{format_date_time(start)}, {format_date_time(end)}'
     filter_kwargs = {f'{filter_on}_between': time_window}
@@ -204,7 +196,9 @@ def is_order_proper_filled(order: Order1CBuyer) -> bool:
     return order.push_to_1C and order.manager and order.buyer and order.buyer.phone and not order.buyer.has_duplicates
 
 
-def add_order_to_db(order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder, session: Session) -> bool:
+def add_order_to_db(
+    order: Order1CBuyer | Order1CSupplier | Order1CSupplierPromCommissionOrder, session: Session
+) -> bool:
     """
     Adds the order to the database if it doesn't exist yet.
     :param order: The order to add to the database.
@@ -316,12 +310,14 @@ def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefu
 def update_crm_order(order: Order1CBuyer):
     if not IS_PRODUCTION_SERVER:
         return
-    data = {'products': [product.model_dump(include={'sku', 'price'}) for product in order.products],
-            'discount_amount': 0}
+    data = {
+        'products': [product.model_dump(include={'sku', 'price'}) for product in order.products],
+        'discount_amount': 0,
+    }
     try:
         crm.update_order(order_id=order.key_crm_id, data=data)
-    except:
-        logger.error(f'Error updating crm order {order.key_crm_id}')
+    except Exception as e:
+        logger.error(f'Error updating crm order {order.key_crm_id}: {e}')
 
 
 def is_order_cancelled(order: Order1CBuyer) -> bool:
@@ -329,39 +325,43 @@ def is_order_cancelled(order: Order1CBuyer) -> bool:
 
 
 def is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order: PromOrderDB) -> bool:
-    return prom_order.status == PromStatus.CANCELLED and prom_order.cpa_commission > 0 and not prom_order.cpa_is_refunded
+    return (
+        prom_order.status == PromStatus.CANCELLED and prom_order.cpa_commission > 0 and not prom_order.cpa_is_refunded
+    )
 
 
 def is_prom_order_cancelled_and_has_order_commission(prom_order: PromOrderDB) -> bool:
-    return prom_order.status == PromStatus.CANCELLED and prom_order.order_commission > 0 
+    return prom_order.status == PromStatus.CANCELLED and prom_order.order_commission > 0
 
 
 def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dict, session: Session) -> None:
     prom_order = session.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
-    if prom_order is None:  
+    if prom_order is None:
         return
-        
+
     products = []
     if is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order):
         products.append(ProductCommissionProSale(price=prom_order.cpa_commission))
     if is_prom_order_cancelled_and_has_order_commission(prom_order):
         products.append(ProductCommissionProSaleForOrder(price=prom_order.order_commission))
-        
-    if products:   
-        logger.info(f'Start processing unreturned CPA commission or order commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})')
+
+    if products:
+        logger.info(
+            f'Start processing unreturned CPA commission or order commission for order {order.key_crm_id} ({prom_order.shop}: {order.source_uuid})'
+        )
         order.products = [FakeProductBuyer()]
         order.proveden = True
         msg = f'Заказ для учёта комиссии за заказ пром и (возможно) невозвращенной комиссии по просейл по заказу {prom_order.shop}: {order.source_uuid}'
         order.manager_comment = f'{order.manager_comment}\n{msg}' if order.manager_comment else msg
         process_new_buyer_order(order, session)
-        
+
         supplier_order = Order1CSupplier(**order_dict)
         supplier_order.products = [FakeProductSupplier()]
         supplier_order.supplier = FAKE_SUPPLIER
         supplier_order.tracking_code = TTN_SENT_BY_CAR
         supplier_order.send_sms = False
         process_new_supplier_order(supplier_order, session)
-        
+
         commission_order = Order1CSupplierPromCommissionOrder(
             key_crm_id=f'{prom_order.order_id}',
             parent_id=order.key_crm_id,
@@ -377,7 +377,7 @@ def main():
     start_time = datetime.now(timezone.utc) - timedelta(minutes=constants.CRM_MINUTES_INTERVAL_TO_CHECK)
     with redirect_stdout(rich_log.console_to_rich_log_redirector):
         crm_orders = get_interval_orders(start=start_time)
-    # crm_orders = get_interval_orders(start=datetime(year=2025, month=7, day=1, tzinfo=timezone.utc), filter_on='created') 
+    # crm_orders = get_interval_orders(start=datetime(year=2025, month=7, day=1, tzinfo=timezone.utc), filter_on='created')
     # crm_orders = get_active_orders() + get_orders_by_stage()
     if len(crm_orders) > constants.CRM_MAX_PROCESSING_ORDERS:
         logger.error(f'Too many orders (more than {constants.CRM_MAX_PROCESSING_ORDERS}) to process in CRM')
@@ -394,7 +394,7 @@ def process_orders(crm_orders: list[dict], session: Session):
                 order = Order1CBuyer(**order_dict)
             except Exception as e:
                 if order_dict['id'] not in parse_errors_orders_ids:
-                    logger.error(f'Error parsing order {order_dict['id']}: {e} ')
+                    logger.error(f'Error parsing order {order_dict["id"]}: {e} ')
                     parse_errors_orders_ids.append(order_dict['id'])
                 continue
 
@@ -414,12 +414,16 @@ def process_orders(crm_orders: list[dict], session: Session):
                     extended_order = order.model_copy(deep=True)
                     extended_order.products = [ProductBuyer(**product) for product in tree_products]
                     process_new_buyer_order(extended_order, session)
-                    make_supplier_comission_orders(order, session)   # untab this line to process unprocessed commissions
+                    make_supplier_comission_orders(order, session)  # untab this line to process unprocessed commissions
 
-            if order.supplier:   # Supplier present, this is a Supplier order or also a Supplier order
+            if order.supplier:  # Supplier present, this is a Supplier order or also a Supplier order
                 order = Order1CSupplier(**order_dict)
-                db_order = session.query(Order1CDB).filter(Order1CDB.key_crm_id == order.key_crm_id,
-                                                           Order1CDB.parent_id.isnot(None)).first()
+                db_order = (
+                    session
+                    .query(Order1CDB)
+                    .filter(Order1CDB.key_crm_id == order.key_crm_id, Order1CDB.parent_id.isnot(None))
+                    .first()
+                )
                 if db_order is None:  # if order doesn't exist in db
                     root_id = find_root_order_id(order_dict, crm_orders)
                     order.parent_id = str(root_id)
@@ -446,7 +450,7 @@ def process_delivery_fees(session: Session):
     for record in records:
         with session.begin():
             try:
-                crm_reply = crm.get_orders(filter={"source_uuid": str(record.order_id)})[0]
+                crm_reply = crm.get_orders(filter={'source_uuid': str(record.order_id)})[0]
                 logger.info(f'Successfully got order from CRM for {record.order_id}')
             except Exception as e:
                 logger.error(f'Failed to get order from CRM for {record.order_id} | {str(e)}')
@@ -456,13 +460,16 @@ def process_delivery_fees(session: Session):
                 parent_id=str(crm_reply['id']),
                 supplier=f'Просейл {record.shop}',
                 products=[ProductCommissionProSaleFreeDelivery(price=record.delivery_commission)],
-                shop=record.shop)
+                shop=record.shop,
+            )
             process_new_supplier_order(commission_order, session)
             make_postupleniye_for_commission_order(commission_order, session)
             session.delete(record)
 
 
 if __name__ == '__main__':
+    rich_log = RichLog(header=f'Синхронизация CRM с 1С       {__file__}', header_style='bold white on cyan')
+    logger_init(rich_log=rich_log)
     logger.info(f'STARTING {__file__}')
     try:
         while True:

@@ -2,28 +2,13 @@ import asyncio
 from contextlib import suppress
 from pathlib import Path
 from aiogram import Dispatcher
+from config.logging import logger_init
 from loguru import logger
 from telegram.bot import close_bot_session, orders_bot
 from telegram.handlers import router
-from telegram.sender_sync import send_service_tg_message
 
 
 reload_file = Path(__file__).parent.parent / 'start_orders_bot.reload'
-
-
-def init_logger() -> None:
-    logger.add(
-        sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
-        level='INFO',
-        backtrace=True,
-        diagnose=True,
-    )
-    logger.add(
-        sink=lambda msg: send_service_tg_message(msg),
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-        level='ERROR',
-    )
 
 
 async def reload_file_watcher(dp: Dispatcher) -> None:
@@ -36,7 +21,7 @@ async def reload_file_watcher(dp: Dispatcher) -> None:
 
 
 async def run_bot() -> None:
-    init_logger()
+    logger_init(log_cut_after=None)
     logger.info(f'STARTING {__file__}')
     watcher_task = None
     try:

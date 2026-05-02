@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import constants
 from api.horoshop_api_async import HoroshopClient
+from config.logging import logger_init
 from db.db_init_async import AsyncSession, Session_async, create_tables
 from db.models import PromOrderDB
 from loguru import logger
@@ -14,30 +15,12 @@ from retry import retry
 from sqlalchemy.future import select
 from telegram.bot import close_bot_session
 from telegram.sender import send_notification
-from telegram.sender_sync import send_service_tg_message
 from telegram.types import Notification
 from tools.rich_log import RichLogMulti
 
 
 bad_orders = []
 reload_file = Path(__file__).with_suffix('.reload')
-
-
-def init_logger() -> None:
-    logger.remove()
-    logger.add(lambda msg: rich_log.print_log(msg.split('=>')[0]), level='INFO', colorize=False)
-    logger.add(
-        sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
-        level='INFO',
-        backtrace=True,
-        diagnose=True,
-    )
-    logger.add(
-        sink=lambda msg: send_service_tg_message(msg),
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-        level='ERROR',
-    )
 
 
 async def send_message(order) -> None:
@@ -160,7 +143,7 @@ if __name__ == '__main__':
         shop_names=[shop['name'] for shop in constants.horoshop_shops],
         header_style='bold white on green',
     )
-    init_logger()
+    logger_init(rich_log=rich_log, rich_log_colorize=False)
     logger.info(f'STARTING {__file__}')
 
     if platform.system() == 'Windows':

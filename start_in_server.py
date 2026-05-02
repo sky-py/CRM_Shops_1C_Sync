@@ -1,10 +1,10 @@
 import asyncio
-import sys
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 import constants
 import uvicorn
 from api.insales_api import Insales
+from config.logging import logger_init
 from db.db_init_async import Session_async
 from db.models import UkrsalonOrderDB
 from fastapi import FastAPI, Request
@@ -68,23 +68,6 @@ async def run_server() -> None:
         watcher_task.cancel()
         with suppress(asyncio.CancelledError):
             await watcher_task
-
-
-def init_logger() -> None:
-    logger.remove()
-    logger.add(sys.stdout, level='INFO')
-    logger.add(
-        sink=f'log/{Path(__file__).stem}.log',
-        format='{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}',
-        level='DEBUG',
-        backtrace=True,
-        diagnose=True,
-    )
-    logger.add(
-        sink=lambda msg: send_service_tg_message(msg),
-        format='{time:YYYY-MM-DD at HH:mm:ss} | {level} | {message}',
-        level='ERROR',
-    )
 
 
 def get_request_debug_headers(request: Request) -> dict[str, str]:
@@ -201,7 +184,7 @@ async def process_ukrsalon_orders(request: Request):
 
 
 if __name__ == '__main__':
-    init_logger()
+    logger_init(log_cut_after=None)
     logger.info('Starting server for RECEIVING CRM Webhooks')
     try:
         asyncio.run(run_server())

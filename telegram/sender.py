@@ -14,7 +14,7 @@ FIRST_MANAGER = 0
 
 async def _send_tg_message_to_user(user_id: int, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
     try:
-        logger.info(f'Sending message to {user_id}: {text}')
+        logger.debug(f'Sending message to {user_id}: {text}')
         await orders_bot.send_message(user_id, text, reply_markup=reply_markup)
     except Exception as e:
         logger.error(f'Error sending message to {user_id}: {e}')
