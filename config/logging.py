@@ -10,6 +10,11 @@ LOG_ROTATION = '1 month'
 LOG_RETENTION = '1 year'
 LOG_FORMAT = '{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {message}'
 SHORT_LOG_FORMAT = '{time:YYYY-MM-DD at HH:mm:ss.SSS} | {level} | {extra[short_message]}\n'
+RICH_LOG_FORMAT = (
+    '<green>{time:YYYY-MM-DD at HH:mm:ss.SSS}</green> | '
+    '<level>{level}</level> | '
+    '<level>{extra[short_message]}</level>\n'
+)
 
 
 class RichLogger(Protocol):
@@ -27,13 +32,13 @@ def get_caller_log_name() -> str:
         del frame
 
 
-def short_log_formatter(cut_after: str | None):
+def short_log_formatter(cut_after: str | None, log_format: str = SHORT_LOG_FORMAT):
     def formatter(record) -> str:
         message = record['message']
         if cut_after is not None:
             message = message.split(cut_after, maxsplit=1)[0]
         record['extra']['short_message'] = message
-        return SHORT_LOG_FORMAT
+        return log_format
 
     return formatter
 
@@ -49,10 +54,11 @@ def logger_init(
     log_name = log_name or get_caller_log_name()
 
     if rich_log is not None:
+        rich_log_format = RICH_LOG_FORMAT if rich_log_colorize else SHORT_LOG_FORMAT
         logger.remove()
         logger.add(
             sink=lambda msg: rich_log.print_log(str(msg).rstrip()),
-            format=short_log_formatter(log_cut_after),
+            format=short_log_formatter(log_cut_after, rich_log_format),
             level='INFO',
             colorize=rich_log_colorize,
         )
