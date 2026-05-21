@@ -15,11 +15,12 @@ class Method(StrEnum):
 
 
 class Route(StrEnum):
-    ORDER = '/order'
-    STAGE = '/order/status'
-    PAYMENT_METHODS = '/order/payment-method'
-    OFFERS = '/offers'
-    PRODUCTS = '/products'
+    ORDER = 'order'
+    STAGE = 'order/status'
+    PAYMENT_METHODS = 'order/payment-method'
+    OFFERS = 'offers'
+    PRODUCTS = 'products'
+    LEEDS = 'pipelines/cards'
 
 
 class KeyCRM:
@@ -45,7 +46,7 @@ class KeyCRM:
         return r.json()
 
     def make_request(self, method: Method, route: str, params=None, json_data=None) -> dict:
-        url = self.main_url + route
+        url = f'{self.main_url}/{route}'
         match method:
             case Method.GET:
                 r = requests.get(url=url, headers=self.headers, params=params, timeout=REQUEST_TIMEOUT)
@@ -96,6 +97,9 @@ class KeyCRM:
 
     def update_order(self, order_id: int | str, data: dict) -> dict:
         return self.make_request(Method.PUT, f'{Route.ORDER}/{order_id}', json_data=data)
+
+    def get_lead(self, lead_id: int | str) -> dict:
+        return self.make_request(Method.GET, f'{Route.LEEDS}/{lead_id}')
 
     def get_stages(self) -> dict:
         return self.make_request(Method.GET, Route.STAGE, params={'limit': RESULTS_PER_PAGE})
