@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.automap import automap_base
 from sqlalchemy.orm import Session
 from parse.parse_constants import TTN_SENT_BY_CAR
+from loguru import logger
 
 load_dotenv('/etc/env/db.env')
 
@@ -39,6 +40,7 @@ def stop_track_ttn(ttn_number: Optional[str]) -> None:
         if q is not None:
             q.finished = 8  # ttn is changed 
             session.commit()
+            logger.info(f'Previous TTN {ttn_number} is changed to finished')
 
 
 def add_ttn_to_db(ttn_number: str, shop_sql_id: int, fio: str, phone: str, manager: str, old_ttn_number: Optional[str] = None) -> bool:
@@ -46,7 +48,7 @@ def add_ttn_to_db(ttn_number: str, shop_sql_id: int, fio: str, phone: str, manag
     if ttn_number == TTN_SENT_BY_CAR:
         return True
     if get_record_by_ttn(ttn_number) is not None:
-        print(f'TTN {ttn_number} already exists in the database')
+        logger.info(f'TTN {ttn_number} already exists in the database. Skipping...')
         return False
     phone = international_phone(phone).removeprefix('+38') if phone else phone
     write_record_to_db(TTN(ttn_number=ttn_number,
