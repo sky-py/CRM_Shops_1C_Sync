@@ -160,7 +160,7 @@ def get_active_orders() -> list:
     Active orders are orders that are not in closing stages.
     """
     orders = []
-    r = crm.get_stages()['data']
+    r = crm.get_order_stages()['data']
     active_stages = [stage_dict['id'] for stage_dict in r if not stage_dict['is_closing_order']]
     for stage in active_stages:
         stage_orders = crm.get_orders(last_orders_amount=0, filter={'status_id': stage})

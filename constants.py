@@ -17,6 +17,10 @@ def get_env(var: str) -> str:
     return v
 
 
+def get_env_int(var: str) -> int:
+    return int(get_env(var))
+
+
 def get_env_bool(var: str) -> bool:
     value = get_env(var).lower()
     if value in {'1', 'true', 'yes', 'on'}:
@@ -28,7 +32,7 @@ def get_env_bool(var: str) -> bool:
 
 # ================================================= DEV =============================================
 IS_PRODUCTION_SERVER = get_env_bool('IS_PRODUCTION_SERVER')
-CALLBACK_CRM_PORT = int(get_env('CALLBACK_CRM_PORT'))
+CALLBACK_CRM_PORT = get_env_int('CALLBACK_CRM_PORT')
 LOG_DIR = Path(__file__).resolve().parent / 'log'
 # ================================================= KEY_CRM =============================================
 CRM_API_KEY = get_env('KEY_CRM_API_KEY')
@@ -47,22 +51,23 @@ POSTGRES_PASSWORD = get_env('POSTGRES_password')
 SALON_DB = get_env('SALON_db')
 POSTGRES_HOST = 'localhost'
 # ================================================= TELEGRAM =============================================
-DO_SEND_TO_BOT = True if get_env('DO_SEND_TO_BOT') == 'True' else False
+DO_SEND_TO_BOT = get_env_bool('DO_SEND_TO_BOT')
 TG_MAX_MESSAGE_LENGTH = 4096
 tg_token_salon = get_env('tg_token_salon')
 tg_token_orders = get_env('tg_token_orders')
 tg_token_tools = get_env('tg_token_tools')
 
-admin_tg = int(get_env('admin_tg'))
-director_tg = int(get_env('director_tg'))
-ukrsalon_tg = int(get_env('ukrsalon_tg'))
-ukrstil_tg = int(get_env('ukrstil_tg'))
-beauty_tg = int(get_env('beauty_tg'))
-klimazon_tg = int(get_env('klimazon_tg'))
-krasunia_tg = int(get_env('krasunia_tg'))
-lida_tg = int(get_env('lida_tg'))
-olexandra_tg = int(get_env('olexandra_tg'))
-rop_tg = int(get_env('rop_tg'))
+admin_tg = get_env_int('admin_tg')
+director_tg = get_env_int('director_tg')
+ukrsalon_tg = get_env_int('ukrsalon_tg')
+ukrstil_tg = get_env_int('ukrstil_tg')
+beauty_tg = get_env_int('beauty_tg')
+klimazon_tg = get_env_int('klimazon_tg')
+krasunia_tg = get_env_int('krasunia_tg')
+lida_tg = get_env_int('lida_tg')
+olexandra_tg = get_env_int('olexandra_tg')
+evgenia_tg = get_env_int('evgenia_tg')
+rop_tg = get_env_int('rop_tg')
 
 # ================================================= MANAGERS =============================================
 managers: dict[int, str] = {
@@ -71,6 +76,7 @@ managers: dict[int, str] = {
     krasunia_tg: 'Елена',
     lida_tg: 'Лида',
     olexandra_tg: 'Олександра',
+    evgenia_tg: 'Євгенія',
     # ukrsalon_tg: 'УкрСалон',
     # klimazon_tg: 'Климазон',
 }

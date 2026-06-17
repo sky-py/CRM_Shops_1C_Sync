@@ -3,9 +3,10 @@ from enum import StrEnum
 import requests
 
 REQUEST_TIMEOUT = 20
-REQUESTS_EXCEEDED_TIME_TO_SLEEP = 10
+REQUESTS_EXCEEDED_TIME_TO_SLEEP = 20
 RESULTS_PER_PAGE = 50
 INCLUDE_ORDER_FIELDS = 'buyer,manager,products.offer,shipping.deliveryService,custom_fields,payments'
+INCLUDE_LEAD_FIELDS = 'contact.client,products,manager,status,custom_fields,payments'
 
 
 class Method(StrEnum):
@@ -16,11 +17,12 @@ class Method(StrEnum):
 
 class Route(StrEnum):
     ORDER = 'order'
-    STAGE = 'order/status'
+    ORDER_STAGES = 'order/status'
     PAYMENT_METHODS = 'order/payment-method'
     OFFERS = 'offers'
     PRODUCTS = 'products'
     LEEDS = 'pipelines/cards'
+    LEED_STAGES = 'pipelines/{pipelineId}/statuses'
 
 
 class KeyCRM:
@@ -99,10 +101,13 @@ class KeyCRM:
         return self.make_request(Method.PUT, f'{Route.ORDER}/{order_id}', json_data=data)
 
     def get_lead(self, lead_id: int | str) -> dict:
-        return self.make_request(Method.GET, f'{Route.LEEDS}/{lead_id}')
+        return self.make_request(Method.GET, f'{Route.LEEDS}/{lead_id}', params={'include': INCLUDE_LEAD_FIELDS})
+    
+    def get_lead_stages(self, pipeline_id) -> dict:
+        return self.make_request(Method.GET, Route.LEED_STAGES.format(pipelineId=pipeline_id), params={'limit': RESULTS_PER_PAGE})
 
-    def get_stages(self) -> dict:
-        return self.make_request(Method.GET, Route.STAGE, params={'limit': RESULTS_PER_PAGE})
+    def get_order_stages(self) -> dict:
+        return self.make_request(Method.GET, Route.ORDER_STAGES, params={'limit': RESULTS_PER_PAGE})
 
     def get_pay_methods(self) -> dict:
         return self.make_request(Method.GET, Route.PAYMENT_METHODS, params={'limit': RESULTS_PER_PAGE})
