@@ -72,6 +72,7 @@ manager_insales_to_db = {   # TODO 1
     1245660: 3,  # Natasha
     1252475: 4,  # Lida
     156590: 6,  # Olena
+    6234371: 15,  # Євгенія
     # 4760402: 9,  # Lilya Tovaroved
 }
 
