@@ -67,7 +67,7 @@ krasunia_tg = get_env_int('krasunia_tg')
 lida_tg = get_env_int('lida_tg')
 olexandra_tg = get_env_int('olexandra_tg')
 evgenia_tg = get_env_int('evgenia_tg')
-# oksana_tg = get_env_int('oksana_tg')
+oksana_tg = get_env_int('oksana_tg')
 rop_tg = get_env_int('rop_tg')
 
 # ================================================= MANAGERS =============================================
@@ -78,7 +78,7 @@ managers: dict[int, str] = {
     lida_tg: 'Лида',
     olexandra_tg: 'Олександра',
     evgenia_tg: 'Євгенія',
-    # oksana_tg: 'Оксана',
+    oksana_tg: 'Оксана',
     # ukrsalon_tg: 'УкрСалон',
     # klimazon_tg: 'Климазон',
 }
