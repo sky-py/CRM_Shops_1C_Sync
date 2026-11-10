@@ -42,6 +42,11 @@ CRM_MINUTES_INTERVAL_TO_CHECK = 120
 CRM_ORDER_COMPLETED_STAGE_ID = 12
 CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
 
+# Each group excludes a product name containing all its words, in any order.
+CRM_1C_EXCLUDED_PRODUCT_NAME_WORD_GROUPS: tuple[tuple[str, ...], ...] = (
+    ('комплект', 'меблів'),
+)
+
 TIME_TO_SLEEP_CRM_1C = 40  # sec
 JSONS_OUT_PATH = Path('C:/Obmen/CRM/IN')
 JSONS_ARCHIVE_PATH = Path(get_env('backup_root_path')) / 'Backup_Json'

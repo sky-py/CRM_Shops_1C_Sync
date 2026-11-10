@@ -1,4 +1,5 @@
 import json
+import re
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -191,9 +192,24 @@ def get_interval_orders(
     return orders
 
 
+def is_product_name_excluded(name: str) -> bool:
+    name_words = set(re.findall(r'\w+', name.casefold()))
+    return any(
+        all(word.casefold() in name_words for word in words)
+        for words in constants.CRM_1C_EXCLUDED_PRODUCT_NAME_WORD_GROUPS
+    )
+
+
 def is_order_proper_filled(order: Order1CBuyer) -> bool:
     """Checks if a client order is valid for processing."""
-    return order.push_to_1C and order.manager and order.buyer and order.buyer.phone and not order.buyer.has_duplicates
+    return (
+        order.push_to_1C
+        and order.manager
+        and order.buyer
+        and order.buyer.phone
+        and not order.buyer.has_duplicates
+        and not any(is_product_name_excluded(product.name) for product in order.products)
+    )
 
 
 def add_order_to_db(
