@@ -13,7 +13,7 @@ from db.models import Order1CDB, PromCPARefundOutbox, PromDeliveryCommissionOutb
 from db.sql_init import add_ttn_to_db
 from loguru import logger
 from parse.ai import ai_reorder_names
-from parse.parse_constants import FAKE_SUPPLIER, TTN_SENT_BY_CAR, PromStatus
+from parse.parse_constants import FAKE_SUPPLIER, TTN_SENT_BY_CAR, Document1C, PromStatus
 from parse.parse_key_crm_order import (
     FakeProductBuyer,
     FakeProductSupplier,
@@ -30,11 +30,13 @@ from parse.parse_key_crm_order import (
 )
 from retry import retry
 from send_sms import send_ttn_sms
+from sqlalchemy import or_
 from tools.rich_log import RichLog
 
 
 crm = KeyCRM(constants.CRM_API_KEY)
 parse_errors_orders_ids = []
+last_commission_backfill_date = None
 reload_file = Path(__file__).with_suffix('.reload')
 constants.JSONS_OUT_PATH.mkdir(parents=True, exist_ok=True)
 constants.JSONS_ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
@@ -278,27 +280,112 @@ def process_existing_supplier_order(order: Order1CSupplierUpdate, db_order: Orde
 def make_supplier_comission_orders(buyer_order: Order1CBuyer, session: Session):
     prom_order = session.query(PromOrderDB).filter_by(order_id=buyer_order.source_uuid).first()
     if prom_order is not None:  # if order at Prom orders
-        if prom_order.cpa_commission > 0:  # if order has CPA commission
-            commission_order = Order1CSupplierPromCommissionOrder(
-                key_crm_id=f'{prom_order.order_id}',
-                parent_id=buyer_order.key_crm_id,
-                supplier=f'Просейл {prom_order.shop}',
-                products=[ProductCommissionProSale(price=prom_order.cpa_commission)],
-                shop=prom_order.shop,
-            )
-            process_new_supplier_order(commission_order, session)
-            make_postupleniye_for_commission_order(commission_order, session)
+        make_prom_commission_orders(prom_order, buyer_order.key_crm_id, session)
 
-        if prom_order.order_commission > 0:  # if order has order commission
-            commission_order = Order1CSupplierPromCommissionOrder(
-                key_crm_id=f'{prom_order.order_id}_oc',  # oc = order commission
-                parent_id=buyer_order.key_crm_id,
-                supplier=f'Просейл {prom_order.shop}',
-                products=[ProductCommissionProSaleForOrder(price=prom_order.order_commission)],
-                shop=prom_order.shop,
+
+def make_prom_commission_orders(
+    prom_order: PromOrderDB, parent_id: str, session: Session, include_cpa: bool = True, include_oc: bool = True
+):
+    """Creates supplier order + postupleniye for Prom commissions. Already existing documents are skipped."""
+    if include_cpa and prom_order.cpa_commission > 0:  # if order has CPA commission
+        commission_order = Order1CSupplierPromCommissionOrder(
+            key_crm_id=f'{prom_order.order_id}',
+            parent_id=parent_id,
+            supplier=f'Просейл {prom_order.shop}',
+            products=[ProductCommissionProSale(price=prom_order.cpa_commission)],
+            shop=prom_order.shop,
+        )
+        process_new_supplier_order(commission_order, session)
+        make_postupleniye_for_commission_order(commission_order, session)
+
+    if include_oc and prom_order.order_commission > 0:  # if order has order commission
+        commission_order = Order1CSupplierPromCommissionOrder(
+            key_crm_id=f'{prom_order.order_id}_oc',  # oc = order commission
+            parent_id=parent_id,
+            supplier=f'Просейл {prom_order.shop}',
+            products=[ProductCommissionProSaleForOrder(price=prom_order.order_commission)],
+            shop=prom_order.shop,
+        )
+        process_new_supplier_order(commission_order, session)
+        make_postupleniye_for_commission_order(commission_order, session)
+
+
+def find_crm_order_id_by_prom_id(prom_order_id: int) -> Optional[int]:
+    crm_orders = crm.get_orders(filter={'source_uuid': str(prom_order_id)})
+    return crm_orders[0]['id'] if crm_orders else None
+
+
+def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
+    """
+    Prom may assign a commission after the buyer order was already sent to 1C, and then
+    make_supplier_comission_orders never sees it. Once a day find recent Prom orders with commission
+    but without a commission document in 1C, and create it if the buyer order is already in 1C.
+    Orders not yet sent to 1C are left for the regular flow.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=constants.PROM_COMMISSION_BACKFILL_DAYS)
+    with session.begin():
+        prom_orders = (
+            session
+            .query(PromOrderDB)
+            .filter(
+                PromOrderDB.ordered_at >= since,
+                or_(PromOrderDB.cpa_commission > 0, PromOrderDB.order_commission > 0),
             )
-            process_new_supplier_order(commission_order, session)
-            make_postupleniye_for_commission_order(commission_order, session)
+            .all()
+        )
+        keys = [key for p in prom_orders for key in (str(p.order_id), f'{p.order_id}_oc')]
+        existing_keys = {key for (key,) in session.query(Order1CDB.key_crm_id).filter(Order1CDB.key_crm_id.in_(keys))}
+
+        candidates = []  # plain values: ORM objects expire after commit
+        for p in prom_orders:
+            cpa_key, oc_key = str(p.order_id), f'{p.order_id}_oc'
+            # refunded CPA nets to zero on Prom, booking it would only add a commission + return pair
+            cpa_missing = p.cpa_commission > 0 and not p.cpa_is_refunded and cpa_key not in existing_keys
+            # fake buyer order flow books order commission under the plain key, so check both keys
+            oc_missing = p.order_commission > 0 and oc_key not in existing_keys and cpa_key not in existing_keys
+            if cpa_missing or oc_missing:
+                candidates.append(
+                    (p.order_id, p.shop, cpa_missing, oc_missing, p.cpa_commission, p.order_commission)
+                )
+
+    created = 0
+    for prom_order_id, shop, cpa_missing, oc_missing, cpa_commission, order_commission in candidates:
+        order_title = f'{shop}:{prom_order_id}'
+        try:
+            crm_order_id = find_crm_order_id_by_prom_id(prom_order_id)
+        except Exception as e:
+            logger.info(f'Commission backfill: failed to find CRM order for {order_title} | {e}')
+            continue
+        if crm_order_id is None:
+            logger.info(f'Commission backfill: CRM order not found for {order_title}')
+            continue
+
+        with session.begin():
+            buyer_order_in_1c = (
+                session
+                .query(Order1CDB)
+                .filter_by(key_crm_id=str(crm_order_id), parent_id=None, document_type=Document1C.CLIENT_ORDER)
+                .first()
+            )
+            if buyer_order_in_1c is None:
+                logger.info(f'Commission backfill: CRM order {crm_order_id} for {order_title} is not in 1C yet')
+                continue
+
+            what = []
+            if cpa_missing:
+                what.append(f'CPA {cpa_commission}')
+            if oc_missing:
+                what.append(f'order commission {order_commission}')
+            logger.info(f'Commission backfill: {order_title} CRM {crm_order_id} => {", ".join(what)}')
+            created += 1
+            if dry_run:
+                continue
+            prom_order = session.get(PromOrderDB, prom_order_id)
+            make_prom_commission_orders(
+                prom_order, str(crm_order_id), session, include_cpa=cpa_missing, include_oc=oc_missing
+            )
+
+    logger.info(f'Commission backfill finished: {created} orders {"would be " if dry_run else ""}processed')
 
 
 def make_postupleniye_for_commission_order(commission_order: Order1CSupplierPromCommissionOrder, session: Session):
@@ -401,6 +488,20 @@ def main():
         process_orders(crm_orders, session)
         process_cpa_refunds(session)
         process_delivery_fees(session)
+        run_daily_commission_backfill(session)
+
+
+def run_daily_commission_backfill(session: Session) -> None:
+    global last_commission_backfill_date
+    today = datetime.now().date()
+    if last_commission_backfill_date == today:
+        return
+    last_commission_backfill_date = today
+    try:
+        with redirect_stdout(rich_log.console_to_rich_log_redirector):
+            backfill_prom_commissions(session)
+    except Exception as e:
+        logger.error(f'Commission backfill failed: {e}')
 
 
 def process_orders(crm_orders: list[dict], session: Session):

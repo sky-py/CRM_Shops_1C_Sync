@@ -41,6 +41,7 @@ CRM_MAX_PROCESSING_ORDERS = 500
 CRM_MINUTES_INTERVAL_TO_CHECK = 120
 CRM_ORDER_COMPLETED_STAGE_ID = 12
 CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
+PROM_COMMISSION_BACKFILL_DAYS = 60  # days back to look for Prom commissions missing in 1C (checked once a day)
 
 # Each group excludes a product name containing all its words, in any order.
 CRM_1C_EXCLUDED_PRODUCT_NAME_WORD_GROUPS: tuple[tuple[str, ...], ...] = (
