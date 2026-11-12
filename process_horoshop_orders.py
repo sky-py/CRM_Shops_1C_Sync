@@ -102,7 +102,7 @@ async def process_orders(orders: list, shop_name: str):
                     notifications.extend(await process_one_order(order, session))
                 except Exception as e:
                     if order_dict['order_id'] not in bad_orders:
-                        logger.error(f'Problem with {shop_name} - order: {order_dict["id"]} {e}')
+                        logger.error(f'Problem with {shop_name} - order: {order_dict["order_id"]} {e}')
                         bad_orders.append(order_dict['order_id'])
                     else:
                         pass
