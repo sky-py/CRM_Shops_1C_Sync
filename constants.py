@@ -97,7 +97,8 @@ TIME_TO_SLEEP_INSALES_CRM = 10  # sec
 PROM_SLEEP_TIME = 5  # sec
 PROM_STOP_TRIES_AFTER_DELAY_SEC = 2500  # sec
 PROM_TIME_INTERVAL_TO_CHECK_MIN = 1320  # minutes (twenty-four hours)
-PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days
+PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days: older orders are not taken as NEW ones
+PROM_UPDATE_EXISTING_ORDERS_DAYS = 180  # days: orders already in DB keep getting status/commission updates
 
 prom_shops = [
     {

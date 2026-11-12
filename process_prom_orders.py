@@ -81,10 +81,25 @@ async def add_order_to_delivery_commission_outbox(order: OrderProm, session: Asy
     )
 
 
-def order_date_is_valid(date: str) -> bool:
-    return datetime.fromisoformat(date).replace(tzinfo=None) > (
-        datetime.now() - timedelta(days=constants.PROM_CONSIDER_ORDER_FINISHED_DAYS)
-    )
+def order_date_is_valid(date: str, days: int = constants.PROM_CONSIDER_ORDER_FINISHED_DAYS) -> bool:
+    return datetime.fromisoformat(date).replace(tzinfo=None) > (datetime.now() - timedelta(days=days))
+
+
+async def filter_orders_to_process(orders: list, session: AsyncSession) -> list:
+    """
+    New orders are taken only if created within PROM_CONSIDER_ORDER_FINISHED_DAYS: Prom sometimes touches
+    very old orders, and they must not appear as new ones. Orders already in DB keep getting updates
+    (status, refunds, commissions) up to PROM_UPDATE_EXISTING_ORDERS_DAYS, since long orders
+    (e.g. production) may be finished or cancelled after 60 days.
+    """
+    old_ids = [order['id'] for order in orders if not order_date_is_valid(order['date_created'])]
+    known_old_ids = set()
+    if old_ids:
+        result = await session.execute(select(PromOrderDB.order_id).where(PromOrderDB.order_id.in_(old_ids)))
+        known_old_ids = set(result.scalars().all())
+    return [
+        order for order in orders if order_date_is_valid(order['date_created']) or order['id'] in known_old_ids
+    ]
 
 
 @retry(stop_after_delay=constants.PROM_STOP_TRIES_AFTER_DELAY_SEC)
@@ -94,7 +109,11 @@ async def get_orders(shop_client: PromClient) -> list:
     last_modified_from = datetime.now() - timedelta(minutes=constants.PROM_TIME_INTERVAL_TO_CHECK_MIN)
     if last_modified_from is not None:
         orders = await shop_client.get_orders(last_modified_from=last_modified_from, limit=1000)
-        return [order for order in orders if order_date_is_valid(order['date_created'])]
+        return [
+            order
+            for order in orders
+            if order_date_is_valid(order['date_created'], constants.PROM_UPDATE_EXISTING_ORDERS_DAYS)
+        ]
     else:  # for getting ALL orders from date
         orders = await shop_client.get_orders(
             created_from=datetime(year=2025, month=7, day=1), created_to=datetime.now(), limit=1000
@@ -127,7 +146,7 @@ async def process_orders(orders: list, shop_name: str):
     notifications = []
     async with Session_async() as session:
         async with session.begin():
-            for order_dict in orders:
+            for order_dict in await filter_orders_to_process(orders, session):
                 try:
                     order = OrderProm(**order_dict)
                     order.shop = shop_name
@@ -169,6 +188,7 @@ def order_was_accepted(order, order_db) -> bool:
 
 def update_order_status(order, order_db):
     if order.status != order_db.status:
+        logger.info(f'Status of {order.shop}:{order.order_id} changed from {order_db.status} to {order.status}')
         order_db.status = order.status
 
 
