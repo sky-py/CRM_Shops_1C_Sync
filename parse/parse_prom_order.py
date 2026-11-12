@@ -11,6 +11,30 @@ def get_price(price: str) -> float:
     return float(''.join(re.findall(r'[\d.,]', price)).replace(',', '.'))
 
 
+FREE_DELIVERY_TIER_RE = re.compile(r'([\d.,]+)\s*грн\W{0,4}продавец.*?от\s*([\d\s.,]+?)\s*грн', re.DOTALL)
+
+
+def parse_free_delivery_tiers(conditions: list[str]) -> list[tuple[float, float]]:
+    """
+    Parses Prom "Дешевая доставка" conditions into (min_order_price, seller_commission) tiers, e.g.
+    "10 грн — продавец, при заказах от 200 грн;" -> (200.0, 10.0)
+    "30 грн — продавец, при заказах от 700 грн;" -> (700.0, 30.0)
+    """
+    tiers = []
+    for condition in conditions:
+        if match := FREE_DELIVERY_TIER_RE.search(condition):
+            commission = float(match.group(1).replace(',', '.'))
+            min_price = float(re.sub(r'\s', '', match.group(2)).replace(',', '.'))
+            tiers.append((min_price, commission))
+    return tiers
+
+
+def get_free_delivery_commission(tiers: list[tuple[float, float]], order_price: float) -> float:
+    """Returns commission of the highest tier whose min price the order reaches, or 0 if none."""
+    reached = [tier for tier in tiers if order_price >= tier[0]]
+    return max(reached)[1] if reached else 0
+
+
 class Product(BaseModel):
     sku: str
     name: str
@@ -76,18 +100,10 @@ class OrderProm(BaseModel):
             try:
                 if model['ps_promotion']['name'] != 'Дешевая доставка':
                     raise Exception(f'Promo free delivery name "Дешевая доставка" not found at order {model["id"]}')
-                for condition in model['ps_promotion']['conditions']:
-                    match = re.search(r'([\d.]+).?грн.{0,4}продавец', condition, re.DOTALL)
-                    if match:
-                        if model['price'] >= 700:
-                            model['delivery_commision'] = float(match.group(1))
-                        elif model['price'] >= 200:
-                            model['delivery_commision'] = 10
-                        else:
-                            model['delivery_commision'] = 0
-                        break
-                else:
+                tiers = parse_free_delivery_tiers(model['ps_promotion']['conditions'])
+                if not tiers:
                     raise Exception(f'Promo free delivery conditions not found at order {model["id"]}')
+                model['delivery_commision'] = get_free_delivery_commission(tiers, model['price'])
             except Exception as e:
                 logger.error(f'Error processing Promo free delivery commision at order {model["id"]}: {e}')
 

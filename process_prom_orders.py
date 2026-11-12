@@ -153,6 +153,7 @@ async def process_one_order(order: OrderProm, session: AsyncSession):
     # if order_was_accepted(order, order_db):
     #     notifications.append(order)
     update_order_status(order, order_db)
+    update_cpa_commission(order, order_db)
     await process_cpa_refund(order, order_db, session)
     await process_delivery_commission(order, order_db, session)
     process_order_commission(order, order_db)
@@ -169,6 +170,17 @@ def order_was_accepted(order, order_db) -> bool:
 def update_order_status(order, order_db):
     if order.status != order_db.status:
         order_db.status = order.status
+
+
+def update_cpa_commission(order, order_db):
+    """Prom may assign or change CPA commission after the order was first saved, so keep it in sync.
+    A zero value from API never overwrites a known commission."""
+    if order.cpa_commission > 0 and order.cpa_commission != order_db.cpa_commission:
+        logger.info(
+            f'Updated CPA commission for {order.shop}:{order.order_id} '
+            f'from {order_db.cpa_commission} to {order.cpa_commission}'
+        )
+        order_db.cpa_commission = order.cpa_commission
 
 
 async def process_cpa_refund(order, order_db, session):
