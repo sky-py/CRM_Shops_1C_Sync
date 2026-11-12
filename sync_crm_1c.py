@@ -38,6 +38,7 @@ crm = KeyCRM(constants.CRM_API_KEY)
 parse_errors_orders_ids = []
 last_commission_backfill_date = None
 reload_file = Path(__file__).with_suffix('.reload')
+last_sync_file = Path(__file__).with_suffix('.last_sync')  # UTC time of the last fully processed CRM window
 constants.JSONS_OUT_PATH.mkdir(parents=True, exist_ok=True)
 constants.JSONS_ARCHIVE_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -508,10 +509,49 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
         make_postupleniye_for_commission_order(commission_order, session)
 
 
+def read_last_sync_time() -> Optional[datetime]:
+    try:
+        return datetime.fromisoformat(last_sync_file.read_text(encoding='utf-8').strip())
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.error(f'Cannot read last sync time from {last_sync_file}: {e}')
+        return None
+
+
+def save_last_sync_time(sync_time: datetime) -> None:
+    last_sync_file.write_text(sync_time.isoformat(), encoding='utf-8')
+
+
+def get_sync_start_time(now: datetime) -> datetime:
+    """
+    Normally CRM changes of the last CRM_MINUTES_INTERVAL_TO_CHECK minutes are read. If the previous successful
+    sync was earlier (the script was stopped or failing), start from it, so changes made meanwhile are not lost.
+    Catch-up is limited to CRM_MAX_CATCHUP_DAYS.
+    """
+    start = now - timedelta(minutes=constants.CRM_MINUTES_INTERVAL_TO_CHECK)
+    last_sync = read_last_sync_time()
+    if last_sync is None:
+        return start
+    catch_up_start = last_sync - timedelta(minutes=constants.CRM_SYNC_OVERLAP_MINUTES)
+    if catch_up_start >= start:
+        return start
+    earliest = now - timedelta(days=constants.CRM_MAX_CATCHUP_DAYS)
+    if catch_up_start < earliest:
+        logger.error(
+            f'Last successful CRM sync was at {last_sync} UTC, more than {constants.CRM_MAX_CATCHUP_DAYS} days ago. '
+            f'Syncing only changes since {earliest} UTC, older changes must be checked manually'
+        )
+        return earliest
+    logger.info(f'Last successful CRM sync was at {last_sync} UTC, catching up CRM changes since {catch_up_start} UTC')
+    return catch_up_start
+
+
 def main():
-    start_time = datetime.now(timezone.utc) - timedelta(minutes=constants.CRM_MINUTES_INTERVAL_TO_CHECK)
+    now = datetime.now(timezone.utc)
+    start_time = get_sync_start_time(now)
     with redirect_stdout(rich_log.console_to_rich_log_redirector):
-        crm_orders = get_interval_orders(start=start_time)
+        crm_orders = get_interval_orders(start=start_time, end=now)
     # crm_orders = get_interval_orders(start=datetime(year=2025, month=7, day=1, tzinfo=timezone.utc), filter_on='created')
     # crm_orders = get_active_orders() + get_orders_by_stage()
     if len(crm_orders) > constants.CRM_MAX_PROCESSING_ORDERS:
@@ -521,6 +561,7 @@ def main():
         process_cpa_refunds(session)
         process_delivery_fees(session)
         run_daily_commission_backfill(session)
+    save_last_sync_time(now)  # only after all orders of the window were processed without exceptions
 
 
 def run_daily_commission_backfill(session: Session) -> None:

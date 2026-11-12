@@ -167,3 +167,6 @@ $RECYCLE.BIN/
 
 
 
+
+# runtime state of sync_crm_1c.py
+*.last_sync
