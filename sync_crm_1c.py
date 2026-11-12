@@ -1,6 +1,7 @@
 import json
 import re
 from contextlib import redirect_stdout
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Optional
@@ -31,6 +32,7 @@ from parse.parse_key_crm_order import (
 from retry import retry
 from send_sms import send_ttn_sms
 from sqlalchemy import or_
+from telegram.sender_sync import send_service_tg_message
 from tools.rich_log import RichLog
 
 
@@ -350,14 +352,18 @@ def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
     but without a commission document in 1C, and create it if the buyer order is already in 1C.
     If the buyer order is not in 1C and the order is cancelled both in CRM and on Prom with commission kept
     by Prom, create the fake buyer order with commission. Other orders are left for the regular flow.
+    Documents are created only for orders from the last PROM_COMMISSION_BACKFILL_DAYS. Orders from the last
+    PROM_COMMISSION_ALERT_DAYS that are finished but still have no commission in 1C are sent to Telegram.
     """
-    since = datetime.now(timezone.utc) - timedelta(days=constants.PROM_COMMISSION_BACKFILL_DAYS)
+    now = datetime.now(timezone.utc)
+    create_since = now - timedelta(days=constants.PROM_COMMISSION_BACKFILL_DAYS)
+    check_since = now - timedelta(days=max(constants.PROM_COMMISSION_ALERT_DAYS, constants.PROM_COMMISSION_BACKFILL_DAYS))
     with session.begin():
         prom_orders = (
             session
             .query(PromOrderDB)
             .filter(
-                PromOrderDB.ordered_at >= since,
+                PromOrderDB.ordered_at >= check_since,
                 or_(PromOrderDB.cpa_commission > 0, PromOrderDB.order_commission > 0),
             )
             .all()
@@ -374,19 +380,30 @@ def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
             oc_missing = p.order_commission > 0 and oc_key not in existing_keys and cpa_key not in existing_keys
             if cpa_missing or oc_missing:
                 candidates.append(
-                    (p.order_id, p.shop, cpa_missing, oc_missing, p.cpa_commission, p.order_commission)
+                    MissingCommission(
+                        prom_order_id=p.order_id,
+                        shop=p.shop,
+                        prom_status=p.status,
+                        can_create=p.ordered_at >= create_since,
+                        cpa_missing=cpa_missing,
+                        oc_missing=oc_missing,
+                        amount=(p.cpa_commission if cpa_missing else 0) + (p.order_commission if oc_missing else 0),
+                    )
                 )
 
     created = 0
-    for prom_order_id, shop, cpa_missing, oc_missing, cpa_commission, order_commission in candidates:
-        order_title = f'{shop}:{prom_order_id}'
+    alerts = []
+    for c in candidates:
+        order_title = f'{c.shop}:{c.prom_order_id}'
         try:
-            crm_order_dict = find_crm_order_by_prom_id(prom_order_id)
+            crm_order_dict = find_crm_order_by_prom_id(c.prom_order_id)
         except Exception as e:
             logger.info(f'Commission backfill: failed to find CRM order for {order_title} | {e}')
             continue
         if crm_order_dict is None:
             logger.info(f'Commission backfill: CRM order not found for {order_title}')
+            if c.prom_status in (PromStatus.SUCCESS, PromStatus.CANCELLED):
+                alerts.append((c, None, 'заказа нет в CRM'))
             continue
         crm_order_id = crm_order_dict['id']
 
@@ -398,27 +415,82 @@ def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
                 .first()
             )
             if buyer_order_in_1c is None:
-                if backfill_cancelled_order_commission(crm_order_dict, order_title, session, dry_run):
+                if c.can_create and backfill_cancelled_order_commission(crm_order_dict, order_title, session, dry_run):
                     created += 1
-                else:
-                    logger.info(f'Commission backfill: CRM order {crm_order_id} for {order_title} is not in 1C yet')
+                    continue
+                logger.info(f'Commission backfill: CRM order {crm_order_id} for {order_title} is not in 1C yet')
+                if reason := get_not_in_1c_alert_reason(crm_order_dict, now):
+                    alerts.append((c, crm_order_id, reason))
+                continue
+
+            if not c.can_create:
+                alerts.append((c, crm_order_id, 'заказ клиента в 1С, комиссия не проведена'))
                 continue
 
             what = []
-            if cpa_missing:
-                what.append(f'CPA {cpa_commission}')
-            if oc_missing:
-                what.append(f'order commission {order_commission}')
-            logger.info(f'Commission backfill: {order_title} CRM {crm_order_id} => {", ".join(what)}')
+            if c.cpa_missing:
+                what.append('CPA')
+            if c.oc_missing:
+                what.append('order commission')
+            logger.info(f'Commission backfill: {order_title} CRM {crm_order_id} => {" + ".join(what)} {c.amount}')
             created += 1
             if dry_run:
                 continue
-            prom_order = session.get(PromOrderDB, prom_order_id)
+            prom_order = session.get(PromOrderDB, c.prom_order_id)
             make_prom_commission_orders(
-                prom_order, str(crm_order_id), session, include_cpa=cpa_missing, include_oc=oc_missing
+                prom_order, str(crm_order_id), session, include_cpa=c.cpa_missing, include_oc=c.oc_missing
             )
 
     logger.info(f'Commission backfill finished: {created} orders {"would be " if dry_run else ""}processed')
+    send_missing_commissions_alert(alerts, dry_run)
+
+
+@dataclass(slots=True)
+class MissingCommission:
+    prom_order_id: int
+    shop: str
+    prom_status: PromStatus
+    can_create: bool  # order is recent enough to create 1C documents automatically
+    cpa_missing: bool
+    oc_missing: bool
+    amount: float
+
+
+def get_not_in_1c_alert_reason(crm_order_dict: dict, now: datetime) -> Optional[str]:
+    """
+    Orders still in work (e.g. in production for weeks) are not reported. Completed orders are reported at once:
+    the manager forgot to send them to 1C. Cancelled ones only after PROM_CANCELLED_ALERT_DELAY_DAYS, when Prom
+    won't refund the commission anymore and the fake order should have been created automatically.
+    """
+    status_group = crm_order_dict['status_group_id']
+    if status_group == constants.CRM_ORDER_COMPLETED_STAGE_GROUP_ID:
+        return 'заказ выполнен, но не отправлен в 1С (нет отметки «Заказ 1С»)'
+    if status_group == constants.CRM_ORDER_CANCELLED_STAGE_GROUP_ID:
+        changed_at = crm_order_dict.get('status_changed_at') or crm_order_dict.get('updated_at')
+        try:
+            cancelled_days = (now - datetime.fromisoformat(changed_at)).days
+        except (TypeError, ValueError):
+            cancelled_days = constants.PROM_CANCELLED_ALERT_DELAY_DAYS
+        if cancelled_days >= constants.PROM_CANCELLED_ALERT_DELAY_DAYS:
+            return (
+                f'заказ отменён в CRM {cancelled_days} дн. назад, по нашей базе Prom комиссию не вернул, '
+                f'фиктивный заказ не создан'
+            )
+    return None
+
+
+def send_missing_commissions_alert(alerts: list[tuple[MissingCommission, Optional[int], str]], dry_run: bool) -> None:
+    if not alerts:
+        return
+    total = round(sum(c.amount for c, _, _ in alerts), 2)
+    lines = [f'Комиссии Prom без документа в 1С: {len(alerts)} заказ(ов) на {total} грн']
+    for c, crm_order_id, reason in sorted(alerts, key=lambda a: (a[0].shop, a[0].prom_order_id)):
+        crm_link = f'https://ukrsalon.keycrm.app/app/orders/view/{crm_order_id}' if crm_order_id else 'нет в CRM'
+        lines.append(f'\n{c.shop} {c.prom_order_id} — {round(c.amount, 2)} грн\n{reason}\nCRM: {crm_link}')
+    text = '\n'.join(lines)
+    logger.info(f'Commission backfill: alert => {text}')
+    if not dry_run:
+        send_service_tg_message(text)
 
 
 def make_postupleniye_for_commission_order(commission_order: Order1CSupplierPromCommissionOrder, session: Session):

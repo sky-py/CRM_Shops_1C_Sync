@@ -42,8 +42,11 @@ CRM_MINUTES_INTERVAL_TO_CHECK = 120
 CRM_SYNC_OVERLAP_MINUTES = 10  # re-read this much before the last successful sync when catching up
 CRM_MAX_CATCHUP_DAYS = 7  # after a longer stop only the last days are synced (error is sent to Telegram)
 CRM_ORDER_COMPLETED_STAGE_ID = 12
+CRM_ORDER_COMPLETED_STAGE_GROUP_ID = 5
 CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
 PROM_COMMISSION_BACKFILL_DAYS = 60  # days back to look for Prom commissions missing in 1C (checked once a day)
+PROM_COMMISSION_ALERT_DAYS = 90  # days back to report finished orders with Prom commission missing in 1C
+PROM_CANCELLED_ALERT_DELAY_DAYS = 14  # report a cancelled order only after Prom can no longer refund commission
 
 # Each group excludes a product name containing all its words, in any order.
 CRM_1C_EXCLUDED_PRODUCT_NAME_WORD_GROUPS: tuple[tuple[str, ...], ...] = (
