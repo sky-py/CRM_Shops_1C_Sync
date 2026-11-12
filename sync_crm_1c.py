@@ -310,9 +310,36 @@ def make_prom_commission_orders(
         make_postupleniye_for_commission_order(commission_order, session)
 
 
-def find_crm_order_id_by_prom_id(prom_order_id: int) -> Optional[int]:
+def find_crm_order_by_prom_id(prom_order_id: int) -> Optional[dict]:
     crm_orders = crm.get_orders(filter={'source_uuid': str(prom_order_id)})
-    return crm_orders[0]['id'] if crm_orders else None
+    return crm_orders[0] if crm_orders else None
+
+
+def backfill_cancelled_order_commission(crm_order_dict: dict, order_title: str, session: Session, dry_run: bool) -> bool:
+    """
+    The fake buyer order for a cancelled order with unreturned Prom commission is normally created when
+    process_orders sees the cancelled CRM order. That happens only within CRM_MINUTES_INTERVAL_TO_CHECK after
+    the CRM change, and only if Prom status in DB is already CANCELLED. When Prom cancels later, the order
+    is never re-read, so retry it here. Returns True if the fake order flow applies to the order.
+    """
+    if crm_order_dict['parent_id'] or crm_order_dict['status_group_id'] != constants.CRM_ORDER_CANCELLED_STAGE_GROUP_ID:
+        return False
+    prom_order = session.query(PromOrderDB).filter_by(order_id=int(crm_order_dict['source_uuid'])).first()
+    if prom_order is None or not (
+        is_prom_order_cancelled_and_has_unreturned_CPA_commission(prom_order)
+        or is_prom_order_cancelled_and_has_order_commission(prom_order)
+    ):
+        return False
+    logger.info(f'Commission backfill: cancelled CRM order {crm_order_dict["id"]} for {order_title} => fake order')
+    if dry_run:
+        return True
+    try:
+        order = Order1CBuyer(**crm_order_dict)
+    except Exception as e:
+        logger.error(f'Commission backfill: error parsing CRM order {crm_order_dict["id"]}: {e}')
+        return False
+    check_and_process_unreturned_commission(order, crm_order_dict, session)
+    return True
 
 
 def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
@@ -320,7 +347,8 @@ def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
     Prom may assign a commission after the buyer order was already sent to 1C, and then
     make_supplier_comission_orders never sees it. Once a day find recent Prom orders with commission
     but without a commission document in 1C, and create it if the buyer order is already in 1C.
-    Orders not yet sent to 1C are left for the regular flow.
+    If the buyer order is not in 1C and the order is cancelled both in CRM and on Prom with commission kept
+    by Prom, create the fake buyer order with commission. Other orders are left for the regular flow.
     """
     since = datetime.now(timezone.utc) - timedelta(days=constants.PROM_COMMISSION_BACKFILL_DAYS)
     with session.begin():
@@ -352,13 +380,14 @@ def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
     for prom_order_id, shop, cpa_missing, oc_missing, cpa_commission, order_commission in candidates:
         order_title = f'{shop}:{prom_order_id}'
         try:
-            crm_order_id = find_crm_order_id_by_prom_id(prom_order_id)
+            crm_order_dict = find_crm_order_by_prom_id(prom_order_id)
         except Exception as e:
             logger.info(f'Commission backfill: failed to find CRM order for {order_title} | {e}')
             continue
-        if crm_order_id is None:
+        if crm_order_dict is None:
             logger.info(f'Commission backfill: CRM order not found for {order_title}')
             continue
+        crm_order_id = crm_order_dict['id']
 
         with session.begin():
             buyer_order_in_1c = (
@@ -368,7 +397,10 @@ def backfill_prom_commissions(session: Session, dry_run: bool = False) -> None:
                 .first()
             )
             if buyer_order_in_1c is None:
-                logger.info(f'Commission backfill: CRM order {crm_order_id} for {order_title} is not in 1C yet')
+                if backfill_cancelled_order_commission(crm_order_dict, order_title, session, dry_run):
+                    created += 1
+                else:
+                    logger.info(f'Commission backfill: CRM order {crm_order_id} for {order_title} is not in 1C yet')
                 continue
 
             what = []
