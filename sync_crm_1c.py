@@ -630,6 +630,10 @@ def get_prom_commission_keys_in_1c(prom_order_id: int, crm_order_id: str, sessio
     return sorted(row.key_crm_id for row in rows)
 
 
+def format_fake_price(product: FakeProductBuyer) -> str:
+    return f'{product.quantity:g} шт × {product.price:g} грн'.replace('.', ',')
+
+
 def make_cancelled_after_1c_text(crm_order_id: str, prom_order: PromOrderDB, commission_keys: list[str]) -> str:
     lines = [
         '⚠ Заказ отменён после выгрузки в 1С',
@@ -642,11 +646,15 @@ def make_cancelled_after_1c_text(crm_order_id: str, prom_order: PromOrderDB, com
         name, field = PROM_COMMISSION_KINDS[key.removeprefix(str(prom_order.order_id))]
         amount = f'{getattr(prom_order, field):.2f}'.replace('.', ',')
         lines.append(f'• {key} — {name} {amount} грн')
-    lines += [
+    lines += [  # the same result as the fake order flow (FakeProductBuyer, FakeProductSupplier, FAKE_SUPPLIER)
         '',
-        'Prom может не вернуть эту комиссию. Если вернёт — возврат придёт в 1С автоматически.',
-        'Не удаляйте документы «Просейл» вместе с заказом клиента. Если заказ клиента нужно удалить — '
-        'сначала перенумеруйте документы и сообщите номер заказа CRM администратору.',
+        'Не удаляйте этот заказ в 1С — вместе с ним удалится комиссия. Вместо удаления:',
+        f'1. В заказе клиента {crm_order_id} замените все товары на «{FakeProductBuyer().name}» '
+        f'({format_fake_price(FakeProductBuyer())}) и проведите.',
+        f'2. В заказе поставщику {crm_order_id} поставьте поставщика «{FAKE_SUPPLIER}» и замените товары '
+        f'на «{FakeProductSupplier().name}» ({format_fake_price(FakeProductSupplier())}).',
+        f'3. Документы «Просейл {prom_order.shop}» не трогайте. Если Prom вернёт комиссию, '
+        f'возврат придёт в 1С автоматически.',
     ]
     return '\n'.join(lines)
 
