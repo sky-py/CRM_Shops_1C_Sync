@@ -14,6 +14,7 @@ from db.models import (
     CancelledAfter1CNoticeDB,
     Order1CDB,
     PromCPARefundOutbox,
+    PromCPARefundRevertOutbox,
     PromDeliveryCommissionOutbox,
     PromOrderDB,
 )
@@ -510,15 +511,54 @@ def make_postupleniye_for_commission_order(commission_order: Order1CSupplierProm
         create_json_file(postupleniye)
 
 
+def get_cpa_commission_key(prom_order_id: int, session: Session) -> str:
+    """CPA commission booked again after a reverted refund lives under <id>_rc, a new refund must return it."""
+    rebooked_key = f'{prom_order_id}{CPA_REBOOKED_SUFFIX}'
+    rebooked = (
+        session
+        .query(Order1CDB)
+        .filter_by(key_crm_id=rebooked_key, document_type=Document1C.POSTUPLENIYE_TOVAROV)
+        .first()
+    )
+    return rebooked_key if rebooked is not None else str(prom_order_id)
+
+
 def make_vozvrat_tovarov_for_commission_posupleniye(prom_cpa_refund: PromCPARefundOutbox, session: Session):
+    key = get_cpa_commission_key(prom_cpa_refund.order_id, session)
     return_tovarov = Order1CReturnTovarov(
-        key_crm_id=str(prom_cpa_refund.order_id),
-        parent_id=str(prom_cpa_refund.order_id),
+        key_crm_id=key,
+        parent_id=key,
         supplier=f'Просейл {prom_cpa_refund.shop}',
         products=[ProductCommissionProSale(price=prom_cpa_refund.cpa_commission)],
     )
     if add_order_to_db(return_tovarov, session):
         create_json_file(return_tovarov)
+
+
+def rebook_commission_after_refund_revert(revert: PromCPARefundRevertOutbox, session: Session) -> None:
+    """
+    Prom reverted the CPA refund (it refunded only a duplicate charge), but the 1C return was already created.
+    The return can't be undone through the exchange folder, so the commission is booked again under <id>_rc:
+    commission + return + commission = the commission Prom kept.
+    """
+    key = str(revert.order_id)
+    has_return = (
+        session.query(Order1CDB).filter_by(key_crm_id=key, document_type=Document1C.RETURN_TOVAROV).first()
+    )
+    if has_return is None:
+        logger.info(f'CPA refund of {revert.shop}:{key} reverted, but no 1C return was created, nothing to book')
+        return
+    commission = session.query(Order1CDB).filter_by(key_crm_id=key, document_type=Document1C.SUPPLIER_ORDER).first()
+    commission_order = Order1CSupplierPromCommissionOrder(
+        key_crm_id=f'{key}{CPA_REBOOKED_SUFFIX}',
+        parent_id=commission.parent_id if commission is not None else key,
+        supplier=f'Просейл {revert.shop}',
+        products=[ProductCommissionProSale(price=revert.cpa_commission)],
+        shop=revert.shop,
+    )
+    logger.info(f'CPA refund of {revert.shop}:{key} reverted by Prom, booking the commission again')
+    process_new_supplier_order(commission_order, session)
+    make_postupleniye_for_commission_order(commission_order, session)
 
 
 def update_crm_order(order: Order1CBuyer):
@@ -588,10 +628,13 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
         mark_cancelled_after_1c_handled(order.key_crm_id, prom_order.order_id, session, is_fake_order=True)
 
 
+CPA_REBOOKED_SUFFIX = '_rc'  # CPA commission booked again after Prom reverted its refund
+
 PROM_COMMISSION_KINDS = {
     '': ('ProSale', 'cpa_commission'),
     '_oc': ('оплата за заказ', 'order_commission'),
     '_fd': ('доставка', 'delivery_commission'),
+    CPA_REBOOKED_SUFFIX: ('ProSale, проведена повторно', 'cpa_commission'),
 }
 
 
@@ -729,6 +772,7 @@ def main():
     with Session_Sync() as session:
         process_orders(crm_orders, session, since=start_time)
         process_cpa_refunds(session)
+        process_cpa_refund_reverts(session)
         process_delivery_fees(session)
         run_daily_commission_backfill(session)
     save_last_sync_time(now)  # only after all orders of the window were processed without exceptions
@@ -805,6 +849,15 @@ def process_cpa_refunds(session: Session):
             if q is not None:
                 make_vozvrat_tovarov_for_commission_posupleniye(cpa_refund, session)
                 session.delete(cpa_refund)
+
+
+def process_cpa_refund_reverts(session: Session):
+    with session.begin():
+        reverts = session.query(PromCPARefundRevertOutbox).all()
+    for revert in reverts:
+        with session.begin():
+            rebook_commission_after_refund_revert(revert, session)
+            session.delete(revert)
 
 
 def process_delivery_fees(session: Session):

@@ -6,7 +6,7 @@ from pathlib import Path
 import constants
 from api.prom_api_async import PromClient
 from db.db_init_async import AsyncSession, Session_async, create_tables
-from db.models import PromCPARefundOutbox, PromDeliveryCommissionOutbox, PromOrderDB
+from db.models import PromCPARefundOutbox, PromCPARefundRevertOutbox, PromDeliveryCommissionOutbox, PromOrderDB
 from loguru import logger
 from parse.parse_constants import PromStatus
 from parse.parse_prom_order import OrderProm
@@ -211,6 +211,26 @@ async def process_cpa_refund(order, order_db, session):
             f'Updated CPA refund status for {order.shop}:{order.order_id} to {order.cpa_is_refunded} '
             f'and added to CPA refund outbox.'
         )
+    elif not order.cpa_is_refunded and order_db.cpa_is_refunded:
+        await process_cpa_refund_revert(order, order_db, session)
+
+
+async def process_cpa_refund_revert(order, order_db, session):
+    """
+    When Prom charges the CPA commission twice and refunds only the duplicate, the API shows is_refunded=True
+    for a while and then False again: the commission is kept. If the 1C return is still in the outbox, just
+    drop it; if it was already created, queue the order so sync_crm_1c books the commission again.
+    """
+    order_db.cpa_is_refunded = False
+    pending_refund = await session.get(PromCPARefundOutbox, order.order_id)
+    if pending_refund is not None:
+        await session.delete(pending_refund)
+        logger.info(f'CPA refund of {order.shop}:{order.order_id} reverted by Prom, pending 1C return dropped')
+    elif await session.get(PromCPARefundRevertOutbox, order.order_id) is None:
+        session.add(
+            PromCPARefundRevertOutbox(order_id=order.order_id, shop=order.shop, cpa_commission=order.cpa_commission)
+        )
+        logger.info(f'CPA refund of {order.shop}:{order.order_id} reverted by Prom, commission will be booked again')
 
 
 async def process_delivery_commission(order, order_db, session):

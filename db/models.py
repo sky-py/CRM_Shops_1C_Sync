@@ -70,7 +70,19 @@ class PromCPARefundOutbox(Base):
 
     def __repr__(self):
         return f'Order {self.order_id} Shop:{self.shop} CPA:{self.cpa_commission}'
-    
+
+
+class PromCPARefundRevertOutbox(Base):
+    """Orders whose CPA refund flag went back to False on Prom after it had been True: Prom refunded only a
+    duplicate charge (or charged again), so the commission is kept and must be booked in 1C again."""
+    __tablename__ = 'prom_cpa_refund_revert_queue'
+    order_id = Column(Integer, primary_key=True)
+    shop = Column(String)
+    cpa_commission = Column(Float, default=0.0)
+
+    def __repr__(self):
+        return f'Order {self.order_id} Shop:{self.shop} CPA:{self.cpa_commission}'
+
 
 class PromDeliveryCommissionOutbox(Base):
     __tablename__ = 'prom_delivery_commission_outbox'
