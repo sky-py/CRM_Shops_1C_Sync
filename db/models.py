@@ -80,3 +80,13 @@ class PromDeliveryCommissionOutbox(Base):
 
     def __repr__(self):
         return f'Order {self.order_id} Shop:{self.shop} CPA:{self.delivery_commission}'
+
+
+class CancelledAfter1CNoticeDB(Base):
+    """CRM orders cancelled after they were sent to 1C, already handled: the accountant was warned not to delete
+    the Prom commission documents in 1C, or the fake order flow created the commission (is_fake_order)."""
+    __tablename__ = 'cancelled_after_1c_notices'
+    crm_order_id = Column(String(20), primary_key=True)
+    prom_order_id = Column(Integer)
+    is_fake_order = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())

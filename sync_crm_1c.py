@@ -10,7 +10,13 @@ from api.key_crm_api import KeyCRM
 from config.logging import logger_init
 from constants import IS_PRODUCTION_SERVER
 from db.db_init import Session, Session_Sync
-from db.models import Order1CDB, PromCPARefundOutbox, PromDeliveryCommissionOutbox, PromOrderDB
+from db.models import (
+    CancelledAfter1CNoticeDB,
+    Order1CDB,
+    PromCPARefundOutbox,
+    PromDeliveryCommissionOutbox,
+    PromOrderDB,
+)
 from db.sql_init import add_ttn_to_db
 from loguru import logger
 from parse.ai import ai_reorder_names
@@ -32,7 +38,7 @@ from parse.parse_key_crm_order import (
 from retry import retry
 from send_sms import send_ttn_sms
 from sqlalchemy import or_
-from telegram.sender_sync import send_service_tg_message
+from telegram.sender_sync import send_service_tg_message, send_tg_message
 from tools.rich_log import RichLog
 
 
@@ -579,6 +585,90 @@ def check_and_process_unreturned_commission(order: Order1CBuyer, order_dict: dic
         )
         process_new_supplier_order(commission_order, session)
         make_postupleniye_for_commission_order(commission_order, session)
+        mark_cancelled_after_1c_handled(order.key_crm_id, prom_order.order_id, session, is_fake_order=True)
+
+
+PROM_COMMISSION_KINDS = {
+    '': ('ProSale', 'cpa_commission'),
+    '_oc': ('оплата за заказ', 'order_commission'),
+    '_fd': ('доставка', 'delivery_commission'),
+}
+
+
+def mark_cancelled_after_1c_handled(crm_order_id: str, prom_order_id: int, session: Session, is_fake_order: bool):
+    if session.get(CancelledAfter1CNoticeDB, str(crm_order_id)) is None:
+        session.add(
+            CancelledAfter1CNoticeDB(
+                crm_order_id=str(crm_order_id), prom_order_id=prom_order_id, is_fake_order=is_fake_order
+            )
+        )
+        session.flush()
+
+
+def is_status_changed_since(order_dict: dict, since: Optional[datetime]) -> bool:
+    changed_at = order_dict.get('status_changed_at')
+    if since is None or not changed_at:
+        return False
+    try:
+        return datetime.fromisoformat(changed_at) >= since
+    except ValueError:
+        return False
+
+
+def get_prom_commission_keys_in_1c(prom_order_id: int, crm_order_id: str, session: Session) -> list[str]:
+    keys = [f'{prom_order_id}{suffix}' for suffix in PROM_COMMISSION_KINDS]
+    rows = (
+        session
+        .query(Order1CDB.key_crm_id)
+        .filter(
+            Order1CDB.document_type == Document1C.SUPPLIER_ORDER,
+            Order1CDB.parent_id == str(crm_order_id),
+            Order1CDB.key_crm_id.in_(keys),
+        )
+        .all()
+    )
+    return sorted(row.key_crm_id for row in rows)
+
+
+def make_cancelled_after_1c_text(crm_order_id: str, prom_order: PromOrderDB, commission_keys: list[str]) -> str:
+    lines = [
+        '⚠ Заказ отменён после выгрузки в 1С',
+        f'Заказ CRM {crm_order_id} (Prom {prom_order.shop} {prom_order.order_id})',
+        f'https://ukrsalon.keycrm.app/app/orders/view/{crm_order_id}',
+        '',
+        f'В 1С к нему есть комиссия Prom, поставщик «Просейл {prom_order.shop}»:',
+    ]
+    for key in commission_keys:
+        name, field = PROM_COMMISSION_KINDS[key.removeprefix(str(prom_order.order_id))]
+        amount = f'{getattr(prom_order, field):.2f}'.replace('.', ',')
+        lines.append(f'• {key} — {name} {amount} грн')
+    lines += [
+        '',
+        'Prom может не вернуть эту комиссию. Если вернёт — возврат придёт в 1С автоматически.',
+        'Не удаляйте документы «Просейл» вместе с заказом клиента. Если заказ клиента нужно удалить — '
+        'сначала перенумеруйте документы и сообщите номер заказа CRM администратору.',
+    ]
+    return '\n'.join(lines)
+
+
+def notify_cancelled_after_1c(order: Order1CBuyer, order_dict: dict, session: Session, since: Optional[datetime]):
+    """
+    When an order already sent to 1C is cancelled, the accountant may delete the client order in 1C together with
+    its subordinate documents, including the Prom commission which Prom keeps. The script can't see 1C, so the
+    accountant is warned once, at the moment of cancellation, not to delete the commission documents.
+    """
+    if not order.source_uuid or not is_status_changed_since(order_dict, since):
+        return
+    if session.get(CancelledAfter1CNoticeDB, str(order.key_crm_id)) is not None:
+        return  # already notified, or the commission was created by the fake order flow
+    commission_keys = get_prom_commission_keys_in_1c(order.source_uuid, order.key_crm_id, session)
+    prom_order = session.query(PromOrderDB).filter_by(order_id=order.source_uuid).first()
+    if not commission_keys or prom_order is None:
+        return
+    mark_cancelled_after_1c_handled(order.key_crm_id, prom_order.order_id, session, is_fake_order=False)
+    text = make_cancelled_after_1c_text(order.key_crm_id, prom_order, commission_keys)
+    logger.info(f'Order {order.key_crm_id} cancelled after it was sent to 1C, accountant notified => {text}')
+    send_tg_message(text, [constants.buh_tg])
 
 
 def read_last_sync_time() -> Optional[datetime]:
@@ -629,7 +719,7 @@ def main():
     if len(crm_orders) > constants.CRM_MAX_PROCESSING_ORDERS:
         logger.error(f'Too many orders (more than {constants.CRM_MAX_PROCESSING_ORDERS}) to process in CRM')
     with Session_Sync() as session:
-        process_orders(crm_orders, session)
+        process_orders(crm_orders, session, since=start_time)
         process_cpa_refunds(session)
         process_delivery_fees(session)
         run_daily_commission_backfill(session)
@@ -649,7 +739,8 @@ def run_daily_commission_backfill(session: Session) -> None:
         logger.error(f'Commission backfill failed: {e}')
 
 
-def process_orders(crm_orders: list[dict], session: Session):
+def process_orders(crm_orders: list[dict], session: Session, since: Optional[datetime] = None):
+    """since: start of the CRM window; orders cancelled after it may trigger the cancelled-after-1C notice"""
     for order_dict in crm_orders:
         with session.begin():
             try:
@@ -677,6 +768,8 @@ def process_orders(crm_orders: list[dict], session: Session):
                     extended_order.products = [ProductBuyer(**product) for product in tree_products]
                     process_new_buyer_order(extended_order, session)
                     make_supplier_comission_orders(order, session)  # untab this line to process unprocessed commissions
+                elif is_order_cancelled(order):
+                    notify_cancelled_after_1c(order, order_dict, session, since)
 
             if order.supplier:  # Supplier present, this is a Supplier order or also a Supplier order
                 order = Order1CSupplier(**order_dict)

@@ -80,6 +80,7 @@ olexandra_tg = get_env_int('olexandra_tg')
 evgenia_tg = get_env_int('evgenia_tg')
 oksana_tg = get_env_int('oksana_tg')
 rop_tg = get_env_int('rop_tg')
+buh_tg = get_env_int('buh_tg')
 
 # ================================================= MANAGERS =============================================
 managers: dict[int, str] = {
