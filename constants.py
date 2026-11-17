@@ -80,7 +80,6 @@ olexandra_tg = get_env_int('olexandra_tg')
 evgenia_tg = get_env_int('evgenia_tg')
 oksana_tg = get_env_int('oksana_tg')
 rop_tg = get_env_int('rop_tg')
-buh_tg = get_env_int('buh_tg')
 
 # ================================================= MANAGERS =============================================
 managers: dict[int, str] = {
@@ -96,6 +95,17 @@ managers: dict[int, str] = {
 }
 
 additional_receivers = {rop_tg: 'Галина', admin_tg: 'Админ'}
+
+# KeyCRM user id of the order manager -> Telegram id in managers (names as in manager_key_to_1c)
+manager_crm_to_tg: dict[int, int] = {
+    5: ukrstil_tg,  # Вика
+    6: beauty_tg,  # Наталья
+    12: krasunia_tg,  # Елена
+    7: lida_tg,  # Лида
+    27: olexandra_tg,  # Олександра
+    29: evgenia_tg,  # Євгенія
+    32: oksana_tg,  # Оксана
+}
 # ================================================== UKRSALON =============================================
 UKRSALON_URL = get_env('UKRSALON_URL')
 TIME_TO_SLEEP_INSALES_CRM = 10  # sec

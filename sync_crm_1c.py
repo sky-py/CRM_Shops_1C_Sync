@@ -39,7 +39,7 @@ from parse.parse_key_crm_order import (
 from retry import retry
 from send_sms import send_ttn_sms
 from sqlalchemy import or_
-from telegram.sender_sync import send_service_tg_message, send_tg_message
+from telegram.sender_sync import send_orders_bot_message, send_service_tg_message
 from tools.rich_log import RichLog
 
 
@@ -702,11 +702,21 @@ def make_cancelled_after_1c_text(crm_order_id: str, prom_order: PromOrderDB, com
     return '\n'.join(lines)
 
 
+def get_order_manager_tg(order_dict: dict, prom_order: PromOrderDB) -> Optional[int]:
+    """Telegram id of the order manager in CRM, or else of the manager who claimed the Prom order in the bot."""
+    crm_manager_id = (order_dict.get('manager') or {}).get('id') or order_dict.get('manager_id')
+    if crm_manager_id in constants.manager_crm_to_tg:
+        return constants.manager_crm_to_tg[crm_manager_id]
+    manager_tg_by_name = {name: tg for tg, name in constants.managers.items()}
+    return manager_tg_by_name.get(prom_order.claimed_by_name)
+
+
 def notify_cancelled_after_1c(order: Order1CBuyer, order_dict: dict, session: Session, since: Optional[datetime]):
     """
-    When an order already sent to 1C is cancelled, the accountant may delete the client order in 1C together with
-    its subordinate documents, including the Prom commission which Prom keeps. The script can't see 1C, so the
-    accountant is warned once, at the moment of cancellation, not to delete the commission documents.
+    When an order already sent to 1C is cancelled, the client order may be deleted in 1C together with its
+    subordinate documents, including the Prom commission which Prom keeps. The script can't see 1C, so the order
+    manager is warned once, at the moment of cancellation, not to delete the commission documents.
+    If the manager can't be found, the message goes to admin only.
     """
     if not order.source_uuid or not is_status_changed_since(order_dict, since):
         return
@@ -718,8 +728,11 @@ def notify_cancelled_after_1c(order: Order1CBuyer, order_dict: dict, session: Se
         return
     mark_cancelled_after_1c_handled(order.key_crm_id, prom_order.order_id, session, is_fake_order=False)
     text = make_cancelled_after_1c_text(order.key_crm_id, prom_order, commission_keys)
-    logger.info(f'Order {order.key_crm_id} cancelled after it was sent to 1C, accountant notified => {text}')
-    send_tg_message(text, [constants.buh_tg])
+    manager_tg = get_order_manager_tg(order_dict, prom_order)
+    if manager_tg is None:
+        text = f'Менеджер заказа не определён — перешлите ответственному.\n\n{text}'
+    logger.info(f'Order {order.key_crm_id} cancelled after it was sent to 1C, manager {manager_tg} notified => {text}')
+    send_orders_bot_message(text, [manager_tg] if manager_tg else [])
 
 
 def read_last_sync_time() -> Optional[datetime]:

@@ -2,10 +2,24 @@
 
 from collections.abc import Iterable
 import telebot
-from constants import DO_SEND_TO_BOT, TG_MAX_MESSAGE_LENGTH, admin_tg, tg_token_salon, tg_token_tools
+from constants import DO_SEND_TO_BOT, TG_MAX_MESSAGE_LENGTH, admin_tg, tg_token_orders, tg_token_salon, tg_token_tools
 
 bot = telebot.TeleBot(tg_token_salon)
 bot_tools = telebot.TeleBot(tg_token_tools)
+bot_orders = telebot.TeleBot(tg_token_orders)
+
+
+def send_orders_bot_message(text: str, users: Iterable[int]):
+    """Messages to managers go through the orders bot, which managers use for Prom orders; admin gets a copy."""
+    text = text[0:TG_MAX_MESSAGE_LENGTH]
+    if not DO_SEND_TO_BOT:
+        print('===TEST=== ', text)
+        return
+    for user in dict.fromkeys([*users, admin_tg]):
+        try:
+            bot_orders.send_message(user, text)
+        except Exception as e:
+            send_service_tg_message(f'Ошибка отправки сообщения пользователю {user}: {e}')
 
 
 def send_tg_message(text: str, users: Iterable[int]):
