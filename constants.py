@@ -115,20 +115,31 @@ PROM_STOP_TRIES_AFTER_DELAY_SEC = 2500  # sec
 PROM_TIME_INTERVAL_TO_CHECK_MIN = 1320  # minutes (twenty-four hours)
 PROM_CONSIDER_ORDER_FINISHED_DAYS = 60  # days: older orders are not taken as NEW ones
 PROM_UPDATE_EXISTING_ORDERS_DAYS = 180  # days: orders already in DB keep getting status/commission updates
+# Prom returns ProSale commission itself only if an unshipped order is cancelled by this day (order day = day 1)
+PROM_CPA_AUTO_REFUND_DAYS = 10
+PROM_CPA_NOT_SHIPPED_NOTICE_DAY = 8  # day of the order when the manager is warned that it is still not shipped
+PROM_CPA_RECEIVED_NOTICE_DAYS = 30  # days back to look for cancelled orders whose parcel the buyer received
+PROM_CPA_NOTICE_CHECK_MINUTES = 30
+PROM_CPA_NOTICE_HOURS = (9, 20)  # notices are sent only from 9:00 till 20:00 local time
+PROM_REFUND_EMAIL = 'sp@prom.ua'
+PROM_REFUND_EMAIL_DAYS = 14  # days after the buyer received the parcel to ask Prom for the commission by email
 
 prom_shops = [
     {
         'name': Shops.UKRSTIL.value,
+        'company_id': 773753,  # Prom company ID, asked in emails to Prom support
         'token': get_env('prom_ukrstil_orders_r'),
         'managers': managers | additional_receivers,
     },
     {
         'name': Shops.BEAUTY_MARKET.value,
+        'company_id': 2102405,
         'token': get_env('prom_beauty_orders_r'),
         'managers': managers | additional_receivers,
     },
     {
         'name': Shops.KRASUNIA.value,
+        'company_id': 2872959,
         'token': get_env('prom_krasunia_orders_r'),
         'managers': managers | additional_receivers,
     },

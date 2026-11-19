@@ -2,17 +2,19 @@ import json
 import re
 from contextlib import redirect_stdout
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal, Optional
 import constants
 from api.key_crm_api import KeyCRM
+from api.prom_api import PromClient
 from config.logging import logger_init
 from constants import IS_PRODUCTION_SERVER
 from db.db_init import Session, Session_Sync
 from db.models import (
     CancelledAfter1CNoticeDB,
     Order1CDB,
+    PromCPANoticeDB,
     PromCPARefundOutbox,
     PromCPARefundRevertOutbox,
     PromDeliveryCommissionOutbox,
@@ -46,6 +48,9 @@ from tools.rich_log import RichLog
 crm = KeyCRM(constants.CRM_API_KEY)
 parse_errors_orders_ids = []
 last_commission_backfill_date = None
+last_prom_cpa_notice_check: Optional[datetime] = None
+prom_clients = {shop['name']: PromClient(shop['token']) for shop in constants.prom_shops}
+prom_company_ids = {shop['name']: shop['company_id'] for shop in constants.prom_shops}
 reload_file = Path(__file__).with_suffix('.reload')
 last_sync_file = Path(__file__).with_suffix('.last_sync')  # UTC time of the last fully processed CRM window
 constants.JSONS_OUT_PATH.mkdir(parents=True, exist_ok=True)
@@ -702,13 +707,13 @@ def make_cancelled_after_1c_text(crm_order_id: str, prom_order: PromOrderDB, com
     return '\n'.join(lines)
 
 
-def get_order_manager_tg(order_dict: dict, prom_order: PromOrderDB) -> Optional[int]:
+def get_order_manager_tg(order_dict: dict, claimed_by_name: Optional[str]) -> Optional[int]:
     """Telegram id of the order manager in CRM, or else of the manager who claimed the Prom order in the bot."""
     crm_manager_id = (order_dict.get('manager') or {}).get('id') or order_dict.get('manager_id')
     if crm_manager_id in constants.manager_crm_to_tg:
         return constants.manager_crm_to_tg[crm_manager_id]
     manager_tg_by_name = {name: tg for tg, name in constants.managers.items()}
-    return manager_tg_by_name.get(prom_order.claimed_by_name)
+    return manager_tg_by_name.get(claimed_by_name)
 
 
 def notify_cancelled_after_1c(order: Order1CBuyer, order_dict: dict, session: Session, since: Optional[datetime]):
@@ -728,11 +733,211 @@ def notify_cancelled_after_1c(order: Order1CBuyer, order_dict: dict, session: Se
         return
     mark_cancelled_after_1c_handled(order.key_crm_id, prom_order.order_id, session, is_fake_order=False)
     text = make_cancelled_after_1c_text(order.key_crm_id, prom_order, commission_keys)
-    manager_tg = get_order_manager_tg(order_dict, prom_order)
+    manager_tg = get_order_manager_tg(order_dict, prom_order.claimed_by_name)
     if manager_tg is None:
         text = f'Менеджер заказа не определён — перешлите ответственному.\n\n{text}'
     logger.info(f'Order {order.key_crm_id} cancelled after it was sent to 1C, manager {manager_tg} notified => {text}')
     send_orders_bot_message(text, [manager_tg] if manager_tg else [])
+
+
+PROM_CPA_NOT_SHIPPED = 'not_shipped'
+PROM_CPA_RECEIVED_CANCELLED = 'received_cancelled'
+PROM_TTN_NOT_SHIPPED_STATUSES = (None, 'initial')  # no TTN status yet, or TTN created but not handed to the carrier
+PROM_TTN_RECEIVED_STATUS = 'delivered'  # buyer received the parcel
+PROM_CPA_NOTICE_STATUSES = (PromStatus.NEW, PromStatus.ACCEPTED, PromStatus.PAID, PromStatus.CANCELLED)
+
+
+@dataclass
+class PromCPANoticeCandidate:
+    order_id: int
+    shop: str
+    kind: str
+    ordered_day: date
+    claimed_by_name: Optional[str]
+
+
+def format_uah(amount: float) -> str:
+    return f'{amount:,.2f}'.replace(',', ' ').replace('.', ',') + ' ₴'
+
+
+def get_prom_cpa_refund_deadline(ordered_day: date) -> date:
+    """Last day to cancel an unshipped order so that Prom returns ProSale commission itself (order day = day 1)."""
+    return ordered_day + timedelta(days=constants.PROM_CPA_AUTO_REFUND_DAYS - 1)
+
+
+def make_prom_cpa_notice_header(c: PromCPANoticeCandidate, crm_order_id: Optional[int]) -> list[str]:
+    lines = [
+        f'Магазин: {c.shop}',
+        f'Заказ Prom: {c.order_id}',
+        f'https://my.prom.ua/cms/order/edit/{c.order_id}',
+    ]
+    if crm_order_id:
+        lines += [f'Заказ CRM: {crm_order_id}', f'https://ukrsalon.keycrm.app/app/orders/view/{crm_order_id}']
+    else:
+        lines.append('Заказ CRM: не найден')
+    return lines
+
+
+def make_not_shipped_text(c: PromCPANoticeCandidate, crm_order_id: Optional[int], commission: float, today: date) -> str:
+    deadline = get_prom_cpa_refund_deadline(c.ordered_day)
+    day = (today - c.ordered_day).days + 1
+    lines = [
+        f'⚠️ Заказ Prom не отправлен уже {day}-й день',
+        '',
+        *make_prom_cpa_notice_header(c, crm_order_id),
+        f'Оформлен: {c.ordered_day:%d.%m.%Y}',
+        f'Комиссия ProSale: {format_uah(commission)}',
+        '',
+        f'Если заказ не состоится — отмените его в CRM не позже {deadline:%d.%m.%Y},',
+        f'тогда Prom вернёт комиссию автоматически. С {deadline + timedelta(days=1):%d.%m.%Y} она уже не вернётся.',
+        'Если заказ будет отправлен — ничего делать не нужно.',
+    ]
+    return '\n'.join(lines)
+
+
+def make_received_cancelled_text(
+    c: PromCPANoticeCandidate, crm_order_id: Optional[int], commission: float, ttn: Optional[str]
+) -> str:
+    lines = [
+        '📮 Покупатель забрал посылку, но заказ отменён — нужно письмо в Prom',
+        '',
+        *make_prom_cpa_notice_header(c, crm_order_id),
+        f'Накладная: {ttn or "—"}',
+        f'Комиссия ProSale: {format_uah(commission)} — автоматически Prom её не вернёт.',
+        '',
+        f'Отправьте письмо не позже {constants.PROM_REFUND_EMAIL_DAYS} дней с даты получения посылки покупателем.',
+        '',
+        f'Кому: {constants.PROM_REFUND_EMAIL}',
+        f'Тема: Повернення комісії за замовленням №{c.order_id}',
+        '',
+        'Доброго дня!',
+        f'Просимо повернути комісію за замовленням №{c.order_id}.',
+        'Покупець отримав замовлення __.__.____ та повернув товар.',
+        'Зворотна ЕН: ____',
+        'Квитанція про повернення коштів покупцю — у вкладенні.',
+        f'ID компанії: {prom_company_ids[c.shop]}',
+        '',
+        'Дякуємо!',
+        '',
+        'Обязательно:',
+        '• приложите квитанцию о возврате денег покупателю;',
+        '• ФИО и телефон отправителя в обратной накладной должны совпадать с покупателем в заказе.',
+    ]
+    return '\n'.join(lines)
+
+
+def find_prom_cpa_notice_candidates(session: Session, today: date) -> list[PromCPANoticeCandidate]:
+    """
+    Prom orders with ProSale commission not refunded yet, which may need a notice: active orders on the days
+    from PROM_CPA_NOT_SHIPPED_NOTICE_DAY till the auto refund deadline, and recently cancelled orders.
+    Whether the order is shipped or received is checked later with Prom API.
+    """
+    since = datetime.now(timezone.utc) - timedelta(
+        days=max(constants.PROM_CPA_RECEIVED_NOTICE_DAYS, constants.PROM_CPA_AUTO_REFUND_DAYS)
+    )
+    with session.begin():
+        prom_orders = (
+            session
+            .query(PromOrderDB)
+            .filter(
+                PromOrderDB.ordered_at >= since,
+                PromOrderDB.cpa_commission > 0,
+                PromOrderDB.cpa_is_refunded.isnot(True),
+                PromOrderDB.status.in_(PROM_CPA_NOTICE_STATUSES),
+            )
+            .all()
+        )
+        order_ids = [p.order_id for p in prom_orders]
+        noticed = set()
+        if order_ids:
+            rows = session.query(PromCPANoticeDB.order_id, PromCPANoticeDB.kind).filter(
+                PromCPANoticeDB.order_id.in_(order_ids)
+            )
+            noticed = {(row.order_id, row.kind) for row in rows}
+
+        candidates = []  # plain values: ORM objects expire after commit
+        for p in prom_orders:
+            ordered_day = p.ordered_at.astimezone().date()
+            if p.status == PromStatus.CANCELLED:
+                kind = PROM_CPA_RECEIVED_CANCELLED
+            elif (
+                ordered_day + timedelta(days=constants.PROM_CPA_NOT_SHIPPED_NOTICE_DAY - 1)
+                <= today
+                <= get_prom_cpa_refund_deadline(ordered_day)
+            ):
+                kind = PROM_CPA_NOT_SHIPPED
+            else:
+                continue
+            if (p.order_id, kind) not in noticed:
+                candidates.append(PromCPANoticeCandidate(p.order_id, p.shop, kind, ordered_day, p.claimed_by_name))
+    return candidates
+
+
+def send_prom_cpa_notices(session: Session) -> None:
+    """
+    Prom keeps ProSale commission of a cancelled order in two cases, and the order manager is warned once for each:
+    - the order is not shipped and is cancelled later than PROM_CPA_AUTO_REFUND_DAYS after ordering: warn on
+      PROM_CPA_NOT_SHIPPED_NOTICE_DAY to cancel it in CRM in time (CRM passes the cancellation to Prom);
+    - the buyer received the parcel and the order was cancelled: Prom returns the commission only by email
+      within PROM_REFUND_EMAIL_DAYS after receiving, so the message carries the email template.
+    If the manager can't be found, the message goes to admin only.
+    """
+    today = datetime.now().date()
+    for c in find_prom_cpa_notice_candidates(session, today):
+        order_title = f'{c.shop}:{c.order_id}'
+        try:
+            prom_order = prom_clients[c.shop].get_order(c.order_id)
+        except Exception as e:
+            logger.info(f'Prom commission notice: failed to get Prom order {order_title} | {e}')
+            continue
+        cpa = prom_order.get('cpa_commission') or {}
+        commission = float(cpa.get('amount') or 0)
+        if commission <= 0 or cpa.get('is_refunded'):
+            continue
+        delivery = prom_order.get('delivery_provider_data') or {}
+        ttn, ttn_status = delivery.get('declaration_number'), delivery.get('unified_status')
+        prom_status = prom_order.get('status')
+        if c.kind == PROM_CPA_NOT_SHIPPED:
+            is_shipped = bool(ttn) and ttn_status not in PROM_TTN_NOT_SHIPPED_STATUSES
+            if prom_status in ('canceled', 'delivered') or is_shipped:
+                continue
+        elif prom_status != 'canceled' or ttn_status != PROM_TTN_RECEIVED_STATUS:
+            continue
+
+        try:
+            crm_order = find_crm_order_by_prom_id(c.order_id)
+        except Exception as e:
+            logger.info(f'Prom commission notice: failed to find CRM order for {order_title} | {e}')
+            continue
+        crm_order_id = crm_order['id'] if crm_order else None
+        if c.kind == PROM_CPA_NOT_SHIPPED:
+            text = make_not_shipped_text(c, crm_order_id, commission, today)
+        else:
+            text = make_received_cancelled_text(c, crm_order_id, commission, ttn)
+        manager_tg = get_order_manager_tg(crm_order or {}, c.claimed_by_name)
+        if manager_tg is None:
+            text = f'Менеджер заказа не определён — перешлите ответственному.\n\n{text}'
+        with session.begin():
+            session.add(PromCPANoticeDB(order_id=c.order_id, kind=c.kind, shop=c.shop))
+        logger.info(f'Prom commission notice {c.kind} for {order_title}, manager {manager_tg} notified => {text}')
+        send_orders_bot_message(text, [manager_tg] if manager_tg else [])
+
+
+def run_prom_cpa_notices(session: Session) -> None:
+    global last_prom_cpa_notice_check
+    now = datetime.now()
+    start_hour, end_hour = constants.PROM_CPA_NOTICE_HOURS
+    if not start_hour <= now.hour < end_hour:
+        return
+    check_interval = timedelta(minutes=constants.PROM_CPA_NOTICE_CHECK_MINUTES)
+    if last_prom_cpa_notice_check is not None and now - last_prom_cpa_notice_check < check_interval:
+        return
+    last_prom_cpa_notice_check = now
+    try:
+        with redirect_stdout(rich_log.console_to_rich_log_redirector):
+            send_prom_cpa_notices(session)
+    except Exception as e:
+        logger.error(f'Prom commission notices failed: {e}')
 
 
 def read_last_sync_time() -> Optional[datetime]:
@@ -788,6 +993,7 @@ def main():
         process_cpa_refund_reverts(session)
         process_delivery_fees(session)
         run_daily_commission_backfill(session)
+        run_prom_cpa_notices(session)
     save_last_sync_time(now)  # only after all orders of the window were processed without exceptions
 
 

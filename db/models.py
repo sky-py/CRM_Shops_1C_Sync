@@ -102,3 +102,14 @@ class CancelledAfter1CNoticeDB(Base):
     prom_order_id = Column(Integer)
     is_fake_order = Column(Boolean, default=False)
     created_at = Column(DateTime, default=func.now())
+
+
+class PromCPANoticeDB(Base):
+    """Prom orders whose manager was already warned that the ProSale commission may be lost: kind 'not_shipped'
+    (order is still not shipped close to the auto refund deadline) or 'received_cancelled' (buyer received
+    the parcel and the order was cancelled, the commission can be returned only by email to Prom)."""
+    __tablename__ = 'prom_cpa_notices'
+    order_id = Column(Integer, primary_key=True)
+    kind = Column(String(30), primary_key=True)
+    shop = Column(String)
+    created_at = Column(DateTime, default=func.now())

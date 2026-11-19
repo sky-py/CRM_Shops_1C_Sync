@@ -16,11 +16,11 @@ class PromClient:
             'Content-type': 'application/json'
         }
 
-    def make_request(self, url, method='GET', data=None) -> requests.Response:
+    def make_request(self, url, method='GET', data=None, timeout=None) -> requests.Response:
         url = f'{main_url}{url}'
         # print(data)
         if method == 'GET':
-            r = requests.get(url=url, headers=self.headers)
+            r = requests.get(url=url, headers=self.headers, timeout=timeout)
         elif method == 'POST':
             r = requests.post(url=url, data=data, headers=self.headers)
         elif method == 'PUT':
@@ -30,6 +30,11 @@ class PromClient:
         # print('status_code=', r.status_code)
         # print(r.text)
         return r
+
+    def get_order(self, order_id: int) -> dict:
+        r = self.make_request(f'/orders/{order_id}', timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        return r.json()['order']
 
     def get_orders_list(self, limit=None):
         limit = f'?limit={limit}' if limit else ""
