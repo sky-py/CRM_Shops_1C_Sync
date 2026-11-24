@@ -19,6 +19,8 @@ from db.models import (
     PromCPARefundRevertOutbox,
     PromDeliveryCommissionOutbox,
     PromOrderDB,
+    SentSmsDB,
+    ShortLinkDB,
 )
 from db.sql_init import add_ttn_to_db
 from loguru import logger
@@ -39,10 +41,11 @@ from parse.parse_key_crm_order import (
     ProductCommissionProSaleFreeDelivery,
 )
 from retry import retry
-from send_sms import send_ttn_sms
+from send_sms import DO_SEND_SMS, alpha_names, is_sms_accepted, send_sms, send_ttn_sms
 from sqlalchemy import or_
 from telegram.sender_sync import send_orders_bot_message, send_service_tg_message
 from tools.rich_log import RichLog
+from tools.tinyurl import shorten
 
 
 crm = KeyCRM(constants.CRM_API_KEY)
@@ -51,6 +54,9 @@ last_commission_backfill_date = None
 last_prom_cpa_notice_check: Optional[datetime] = None
 prom_clients = {shop['name']: PromClient(shop['token']) for shop in constants.prom_shops}
 prom_company_ids = {shop['name']: shop['company_id'] for shop in constants.prom_shops}
+product_sms_rules = {rule.key: rule for rule in constants.PRODUCT_SMS_RULES}
+product_sms_root_ids: dict[int, int] = {}  # CRM sub-order id -> root order id, a parent never changes
+product_sms_reported_orders: set[int] = set()  # CRM orders whose product SMS problem was already logged
 reload_file = Path(__file__).with_suffix('.reload')
 last_sync_file = Path(__file__).with_suffix('.last_sync')  # UTC time of the last fully processed CRM window
 constants.JSONS_OUT_PATH.mkdir(parents=True, exist_ok=True)
@@ -209,8 +215,12 @@ def get_interval_orders(
     return orders
 
 
+def get_name_words(name: str) -> set[str]:
+    return set(re.findall(r'\w+', name.casefold()))
+
+
 def is_product_name_excluded(name: str) -> bool:
-    name_words = set(re.findall(r'\w+', name.casefold()))
+    name_words = get_name_words(name)
     return any(
         all(word.casefold() in name_words for word in words)
         for words in constants.CRM_1C_EXCLUDED_PRODUCT_NAME_WORD_GROUPS
@@ -940,6 +950,168 @@ def run_prom_cpa_notices(session: Session) -> None:
         logger.error(f'Prom commission notices failed: {e}')
 
 
+def is_product_of_sms_rule(product: ProductBuyer, rule: constants.ProductSmsRule) -> bool:
+    """The product name is the parsed one: from the product feed by SKU (Ukrainian), else as in CRM."""
+    if not (product.sku or '').casefold().startswith(rule.sku_prefix.casefold()):
+        return False
+    name_words = get_name_words(product.name)
+    return all(word.casefold() in name_words for word in rule.words) and not any(
+        word.casefold() in name_words for word in rule.exclude_words
+    )
+
+
+def find_order_sms_rules(order: Order1CBuyer) -> list[constants.ProductSmsRule]:
+    return [
+        rule
+        for rule in constants.PRODUCT_SMS_RULES
+        if any(is_product_of_sms_rule(product, rule) for product in order.products)
+    ]
+
+
+def is_order_ready_for_product_sms(order_dict: dict) -> bool:
+    if order_dict['status_group_id'] in constants.PRODUCT_SMS_EXCLUDED_STAGE_GROUP_IDS:
+        return False
+    created_day = datetime.fromisoformat(order_dict['created_at']).astimezone().date()  # local (Kyiv) day
+    return created_day >= constants.PRODUCT_SMS_ORDERS_CREATED_FROM
+
+
+def get_product_sms_root_id(order_dict: dict, crm_orders: list[dict]) -> int:
+    if order_dict['parent_id'] is None:
+        return order_dict['id']
+    if order_dict['id'] not in product_sms_root_ids:
+        product_sms_root_ids[order_dict['id']] = find_root_order_id(order_dict, crm_orders)
+    return product_sms_root_ids[order_dict['id']]
+
+
+def get_product_sms_phone(order: Order1CBuyer) -> Optional[str]:
+    """The recipient's phone if the order has another recipient, else the buyer's, as for TTN SMS."""
+    return order.shipping.recipient_phone or (order.buyer.phone if order.buyer else None)
+
+
+def queue_product_sms(order: Order1CBuyer, order_dict: dict, crm_orders: list[dict], session: Session) -> None:
+    """
+    Adds the product SMS of constants.PRODUCT_SMS_RULES to sent_sms, once per root CRM order and rule; send_product_sms
+    sends them. Each CRM order is checked on its own products and stage: a supplier sub-order often holds the product
+    and moves through the stages apart from the root order. Errors are only logged (once per order while it keeps
+    changing) and never stop the 1C sync.
+    """
+    try:
+        rules = find_order_sms_rules(order)
+        if not rules or not is_order_ready_for_product_sms(order_dict):
+            return
+        with session.begin_nested():
+            root_id = str(get_product_sms_root_id(order_dict, crm_orders))
+            new_rules = [rule for rule in rules if session.get(SentSmsDB, (root_id, rule.key)) is None]
+            if not new_rules:
+                return
+            phone = get_product_sms_phone(order)
+            if not phone:
+                if order_dict['id'] not in product_sms_reported_orders:
+                    product_sms_reported_orders.add(order_dict['id'])
+                    logger.info(f'Product SMS skipped for order {order.key_crm_id}: no phone')
+                return
+            for rule in new_rules:
+                session.add(
+                    SentSmsDB(
+                        crm_order_id=root_id,
+                        rule=rule.key,
+                        product_order_id=order.key_crm_id,
+                        shop_sql_id=order.shop_sql_id,
+                        phone=phone,
+                    )
+                )
+                logger.info(f'Product SMS {rule.key} queued for order {root_id} (product in order {order.key_crm_id})')
+            session.flush()
+    except Exception as e:
+        log = logger.warning if order_dict['id'] in product_sms_reported_orders else logger.error
+        product_sms_reported_orders.add(order_dict['id'])
+        log(f'Product SMS: failed to queue SMS for CRM order {order_dict["id"]}: {e}')
+
+
+class ProductSmsNotSendable(Exception):
+    """The SMS can never be sent as it is (its rule is gone, the text is too long), so it isn't tried again."""
+
+
+def get_short_link(long_url: str, session: Session) -> str:
+    if link := session.get(ShortLinkDB, long_url):
+        return link.short_url
+    short_url = shorten(long_url)
+    session.add(ShortLinkDB(long_url=long_url, short_url=short_url))
+    session.flush()
+    logger.info(f'TinyURL short link {short_url} made for {long_url}')
+    return short_url
+
+
+def make_product_sms_text(rule: constants.ProductSmsRule, session: Session) -> str:
+    text = rule.text.format(link=get_short_link(rule.link, session))
+    if len(text) > constants.PRODUCT_SMS_MAX_LENGTH:
+        raise ProductSmsNotSendable(
+            f'text is {len(text)} characters, more than {constants.PRODUCT_SMS_MAX_LENGTH} (one SMS), '
+            f'fix it in constants.PRODUCT_SMS_RULES: {text}'
+        )
+    return text
+
+
+def send_one_product_sms(sms: SentSmsDB, session: Session, now: datetime) -> None:
+    title = f'Product SMS {sms.rule} for CRM order {sms.crm_order_id}'
+    sms.tries += 1
+    sms.last_try_at = now
+    try:
+        rule = product_sms_rules.get(sms.rule)
+        if rule is None:
+            raise ProductSmsNotSendable('the rule is no longer in constants.PRODUCT_SMS_RULES')
+        text = make_product_sms_text(rule, session)
+        r = send_sms(
+            phone=sms.phone, alpha_name=alpha_names[sms.shop_sql_id], text=text, timeout=constants.PRODUCT_SMS_TIMEOUT
+        )
+        if not is_sms_accepted(r):
+            answer = f'HTTP {r.status_code}: {r.text[:300]}' if r is not None else 'no answer'
+            raise RuntimeError(f'SMS gateway did not accept the SMS, {answer}')
+    except Exception as e:
+        sms.last_error = str(e)[:1000]
+        if isinstance(e, ProductSmsNotSendable):
+            sms.tries = constants.PRODUCT_SMS_MAX_TRIES
+        if sms.tries >= constants.PRODUCT_SMS_MAX_TRIES:
+            logger.error(f'{title} was not sent to {sms.phone} ({sms.tries} tries), not trying again: {e}')
+        else:
+            logger.warning(f'{title}: try {sms.tries} failed, will try again | {e}')
+        return
+    sms.text = text
+    sms.sent_at = now
+    sms.last_error = None
+    logger.info(f'{title} sent to {sms.phone} => {text}')
+
+
+def send_product_sms(session: Session) -> None:
+    """Sends the product SMS waiting in sent_sms; a failed one is tried again after PRODUCT_SMS_RETRY_MINUTES."""
+    now = datetime.now()
+    retry_before = now - timedelta(minutes=constants.PRODUCT_SMS_RETRY_MINUTES)
+    with session.begin():
+        keys = [
+            (sms.crm_order_id, sms.rule)
+            for sms in session.query(SentSmsDB)
+            .filter(
+                SentSmsDB.sent_at.is_(None),
+                SentSmsDB.tries < constants.PRODUCT_SMS_MAX_TRIES,
+                or_(SentSmsDB.last_try_at.is_(None), SentSmsDB.last_try_at < retry_before),
+            )
+            .order_by(SentSmsDB.created_at)
+        ]
+    for key in keys:
+        with session.begin():
+            send_one_product_sms(session.get(SentSmsDB, key), session, now)
+
+
+def run_product_sms(session: Session) -> None:
+    start_hour, end_hour = constants.PRODUCT_SMS_HOURS
+    if not DO_SEND_SMS or not start_hour <= datetime.now().hour < end_hour:
+        return  # SMS wait in sent_sms till the allowed hours
+    try:
+        send_product_sms(session)
+    except Exception as e:
+        logger.error(f'Product SMS sending failed: {e}')
+
+
 def read_last_sync_time() -> Optional[datetime]:
     try:
         return datetime.fromisoformat(last_sync_file.read_text(encoding='utf-8').strip())
@@ -994,6 +1166,7 @@ def main():
         process_delivery_fees(session)
         run_daily_commission_backfill(session)
         run_prom_cpa_notices(session)
+        run_product_sms(session)
     save_last_sync_time(now)  # only after all orders of the window were processed without exceptions
 
 
@@ -1021,6 +1194,8 @@ def process_orders(crm_orders: list[dict], session: Session, since: Optional[dat
                     logger.error(f'Error parsing order {order_dict["id"]}: {e} ')
                     parse_errors_orders_ids.append(order_dict['id'])
                 continue
+
+            queue_product_sms(order, order_dict, crm_orders, session)
 
             if not is_order_proper_filled(order) and not is_order_cancelled(order):
                 continue  # skip some not properly filled orders

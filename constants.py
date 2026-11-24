@@ -1,4 +1,6 @@
 import os
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from dotenv import load_dotenv
 from parse.parse_constants import Shops
@@ -42,8 +44,10 @@ CRM_MINUTES_INTERVAL_TO_CHECK = 120
 CRM_SYNC_OVERLAP_MINUTES = 10  # re-read this much before the last successful sync when catching up
 CRM_MAX_CATCHUP_DAYS = 7  # after a longer stop only the last days are synced (error is sent to Telegram)
 CRM_ORDER_COMPLETED_STAGE_ID = 12
+CRM_ORDER_NEW_STAGE_GROUP_ID = 1  # Новий
+CRM_ORDER_ACCEPTED_STAGE_GROUP_ID = 2  # Прийнят у роботу, Виставлен рахунок
 CRM_ORDER_COMPLETED_STAGE_GROUP_ID = 5
-CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6
+CRM_ORDER_CANCELLED_STAGE_GROUP_ID = 6  # canceled, ДУБЛЬ, Передумав and other cancel stages
 PROM_COMMISSION_BACKFILL_DAYS = 60  # days back to look for Prom commissions missing in 1C (checked once a day)
 PROM_COMMISSION_ALERT_DAYS = 90  # days back to report finished orders with Prom commission missing in 1C
 PROM_CANCELLED_ALERT_DELAY_DAYS = 14  # report a cancelled order only after Prom can no longer refund commission
@@ -56,6 +60,51 @@ CRM_1C_EXCLUDED_PRODUCT_NAME_WORD_GROUPS: tuple[tuple[str, ...], ...] = (
 TIME_TO_SLEEP_CRM_1C = 40  # sec
 JSONS_OUT_PATH = Path('C:/Obmen/CRM/IN')
 JSONS_ARCHIVE_PATH = Path(get_env('backup_root_path')) / 'Backup_Json'
+# ================================================= PRODUCT SMS =============================================
+
+
+@dataclass(frozen=True)
+class ProductSmsRule:
+    """SMS to the buyer when a CRM order has a product whose SKU starts with sku_prefix and whose name has all `words`
+    and none of `exclude_words`. Both are compared in any case, words as whole words. The name is the one the 1C sync
+    uses: from the product feed by SKU (Ukrainian), else as in CRM."""
+    key: str  # kept in table sent_sms as the rule name: don't change it after the rule was used
+    sku_prefix: str
+    words: tuple[str, ...]
+    text: str  # '{link}' is replaced with the TinyURL short link of `link`
+    link: str
+    exclude_words: tuple[str, ...] = ()
+
+
+PRODUCT_SMS_RULES: tuple[ProductSmsRule, ...] = (
+    ProductSmsRule(
+        key='chair_hydraulics',
+        sku_prefix='VM_',
+        words=('крісло',),
+        exclude_words=('мийка', 'очікування', 'педикюрне'),  # крісло-мийка gets the sink SMS
+        text='Відеоінструкція з монтажу гідравліки: {link}',
+        link='https://www.youtube.com/watch?v=Ccy4UY7W_fw',
+    ),
+    ProductSmsRule(
+        key='sink_mounting',
+        sku_prefix='VM_',
+        words=('мийка',),
+        text='Відеоінструкція перед монтажем мийки: {link}',
+        link='https://www.youtube.com/watch?v=ZVKpyBOM2WI',
+    ),
+)
+# SMS is not sent while the order (the CRM order or sub-order that has the product) is in these stage groups
+PRODUCT_SMS_EXCLUDED_STAGE_GROUP_IDS = (
+    CRM_ORDER_NEW_STAGE_GROUP_ID,
+    CRM_ORDER_ACCEPTED_STAGE_GROUP_ID,
+    CRM_ORDER_CANCELLED_STAGE_GROUP_ID,
+)
+PRODUCT_SMS_ORDERS_CREATED_FROM = date(2026, 11, 25)  # launch day: older orders get no product SMS
+PRODUCT_SMS_MAX_LENGTH = 70  # one Cyrillic SMS; a longer text is not sent, admin is told
+PRODUCT_SMS_HOURS = (9, 20)  # SMS are sent only from 9:00 till 20:00 local time, others wait in sent_sms
+PRODUCT_SMS_MAX_TRIES = 5  # failed tries of one SMS, then admin is told
+PRODUCT_SMS_RETRY_MINUTES = 10
+PRODUCT_SMS_TIMEOUT = 30  # sec, SMS gateway request
 # ================================================= DB =============================================
 POSTGRES_USER = get_env('POSTGRES_user')
 POSTGRES_PASSWORD = get_env('POSTGRES_password')

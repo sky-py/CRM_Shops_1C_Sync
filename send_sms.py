@@ -46,13 +46,19 @@ def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
     return send_sms(phone=phone, alpha_name=alpha, text=text)
 
 
-def send_sms(phone: str, alpha_name: str, text: str):
+def is_sms_accepted(r) -> bool:
+    """True when the SMS gateway answered <status>OK</status> to send_sms."""
+    return r is not None and r.ok and '<status>OK</status>' in r.text
+
+
+def send_sms(phone: str, alpha_name: str, text: str, timeout: float | None = None):
     """Sends SMS.
 
     :param phone: Phone at +38.... format.
     :param alpha_name: alpha_name
     :param text: SMS content
-    :return: :class:`Response <Response>` object
+    :param timeout: seconds to wait for the SMS gateway, None waits without limit
+    :return: :class:`Response <Response>` object, None when DO_SEND_SMS is off
     :rtype: requests.Response
     """
 
@@ -67,7 +73,7 @@ def send_sms(phone: str, alpha_name: str, text: str):
                 </request_sendsms>"""
     # print('sending: ', alpha_name, phone, text)
     if DO_SEND_SMS:
-        r = requests.post(url=sms_url, data=xml.encode('utf-8'), headers=sms_headers)
+        r = requests.post(url=sms_url, data=xml.encode('utf-8'), headers=sms_headers, timeout=timeout)
         log_text = f'SEND SMS: {phone} | {alpha_name} => | {text} | Reply: {r.text}'
         logger.info(log_text) if r else logger.error(log_text)
         return r

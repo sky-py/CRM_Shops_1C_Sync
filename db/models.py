@@ -113,3 +113,32 @@ class PromCPANoticeDB(Base):
     kind = Column(String(30), primary_key=True)
     shop = Column(String)
     created_at = Column(DateTime, default=func.now())
+
+
+class SentSmsDB(Base):
+    """Product SMS to buyers (constants.PRODUCT_SMS_RULES), one per CRM order and rule. A row is added when the order
+    got a product of the rule and is waiting to be sent; sent_at is set when the SMS gateway accepted the SMS."""
+    __tablename__ = 'sent_sms'
+    crm_order_id = Column(String(20), primary_key=True)  # root CRM order (the buyer order)
+    rule = Column(String(50), primary_key=True)  # ProductSmsRule.key
+    product_order_id = Column(String(20))  # CRM order with the product: the root order or its supplier sub-order
+    shop_sql_id = Column(Integer)  # chooses the SMS sender name, as for TTN SMS
+    phone = Column(String(20))
+    text = Column(String, nullable=True, default=None)  # text as sent
+    tries = Column(Integer, nullable=False, default=0)
+    last_try_at = Column(DateTime, nullable=True, default=None)
+    last_error = Column(String, nullable=True, default=None)
+    created_at = Column(DateTime, default=func.now())
+    sent_at = Column(DateTime, nullable=True, default=None)
+
+    def __repr__(self):
+        return (f'SMS {self.rule} for order {self.crm_order_id} (product in {self.product_order_id}) '
+                f'tries:{self.tries} sent_at:{self.sent_at}')
+
+
+class ShortLinkDB(Base):
+    """TinyURL short links, made once for each long link: TinyURL makes a new short link on every request."""
+    __tablename__ = 'short_links'
+    long_url = Column(String, primary_key=True)
+    short_url = Column(String, nullable=False)
+    created_at = Column(DateTime, default=func.now())
