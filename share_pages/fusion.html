@@ -88,20 +88,122 @@
   .subtitle { margin: 0 0 22px; font-size: clamp(18px, 3.4vw, 22px); color: var(--muted); font-weight: 500; }
   .hero p:last-child { margin-bottom: 0; }
 
-  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 6px; padding: 0; list-style: none; }
-  .toc a {
-    display: inline-block;
-    padding: 7px 13px;
-    border-radius: 999px;
-    background: var(--card);
-    border: 1px solid var(--line);
+  /* Contents: a column on the left on wide screens, a sheet from the bottom (opened by .toc-fab) on narrow ones */
+  .toc-label {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .toc-list { margin: 0; padding: 0; list-style: none; }
+  .toc-list a {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    padding: 8px 10px;
+    border-radius: 10px;
     color: var(--text);
-    font-size: 14px;
-    line-height: 1.3;
+    font-size: 15px;
+    line-height: 1.35;
     text-decoration: none;
   }
-  .toc a span { color: var(--accent-ink); font-weight: 700; margin-right: 4px; font-variant-numeric: tabular-nums; }
-  .toc a:hover, .toc a:focus-visible { border-color: var(--accent); }
+  .toc-num { flex: none; width: 22px; color: var(--muted); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .toc-list a:hover { background: var(--soft); }
+  .toc-list a.active { background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
+  .toc-list a.active .toc-num { color: var(--accent-ink); }
+  .toc-handle { display: none; }
+  .toc-fab, .toc-backdrop { display: none; }
+
+  @media (min-width: 1100px) {
+    .layout {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 780px);
+      gap: 40px;
+      justify-content: center;
+      padding: 0 24px;
+    }
+    .wrap { max-width: none; margin: 0; padding: 0 0 40px; }
+    .toc {
+      position: sticky;
+      top: 16px;
+      align-self: start;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      margin-top: 16px;
+      padding: 20px 10px 20px 0;
+    }
+  }
+  @media (max-width: 1099.98px) {
+    .wrap { padding-bottom: 104px; }
+    .toc {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      max-height: 78vh;
+      overflow-y: auto;
+      padding: 10px 16px calc(84px + env(safe-area-inset-bottom));
+      border-radius: 22px 22px 0 0;
+      background: var(--card);
+      box-shadow: 0 -10px 40px rgba(0, 0, 0, .18);
+      transform: translateY(105%);
+      visibility: hidden;
+      transition: transform .25s ease, visibility 0s linear .25s;
+    }
+    .toc-open .toc { transform: none; visibility: visible; transition: transform .25s ease; }
+    .toc-handle { display: block; width: 40px; height: 4px; margin: 2px auto 14px; border-radius: 4px; background: var(--line); }
+    .toc-label { padding: 0 10px; }
+    .toc-list a { padding: 12px 10px; font-size: 16px; }
+    .toc-backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      background: rgba(20, 15, 13, .42);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+    }
+    .toc-open .toc-backdrop { opacity: 1; pointer-events: auto; }
+    .toc-open { overflow: hidden; }
+    .toc-fab {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      position: fixed;
+      left: 50%;
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      z-index: 40;
+      max-width: calc(100% - 32px);
+      padding: 11px 12px 11px 16px;
+      transform: translateX(-50%);
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: var(--on-accent);
+      box-shadow: 0 8px 26px rgba(43, 37, 34, .28);
+      font: inherit;
+      font-size: 15px;
+      font-weight: 650;
+      line-height: 1.2;
+      cursor: pointer;
+    }
+    .toc-fab[hidden] { display: none; }
+    .toc-fab svg { flex: none; }
+    .fab-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .fab-num {
+      flex: none;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .24);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+    .fab-num:empty { display: none; }
+  }
 
   .card {
     margin: 16px 0;
@@ -226,11 +328,29 @@
   @media print {
     body { background: #fff; }
     .card, .hero { box-shadow: none; break-inside: avoid; }
-    .toc { display: none; }
+    .toc, .toc-fab, .toc-backdrop { display: none !important; }
   }
 </style>
 </head>
 <body>
+<div class="layout">
+
+  <aside class="toc" id="toc" aria-label="Зміст">
+    <div class="toc-handle" aria-hidden="true"></div>
+    <p class="toc-label">Зміст</p>
+    <ol class="toc-list">
+      <li><a href="#hofra"><span class="toc-num">01</span><span class="toc-text">Положення гофри</span></a></li>
+      <li><a href="#plafon"><span class="toc-num">02</span><span class="toc-text">Регулювання плафона</span></a></li>
+      <li><a href="#kriplennia"><span class="toc-num">03</span><span class="toc-text">Кріплення гофри</span></a></li>
+      <li><a href="#ochyshchennia"><span class="toc-num">04</span><span class="toc-text">Очищення гофри</span></a></li>
+      <li><a href="#filtry"><span class="toc-num">05</span><span class="toc-text">Догляд за фільтрами</span></a></li>
+      <li><a href="#zamina"><span class="toc-num">06</span><span class="toc-text">Заміна фільтра</span></a></li>
+      <li><a href="#vseredyni"><span class="toc-num">07</span><span class="toc-text">Внутрішні поверхні</span></a></li>
+      <li><a href="#pamiatka"><span class="toc-num">08</span><span class="toc-text">Пам’ятка з догляду</span></a></li>
+      <li><a href="#poruch"><span class="toc-num">09</span><span class="toc-text">Ми поруч</span></a></li>
+    </ol>
+  </aside>
+
 <div class="wrap">
 
   <header class="hero">
@@ -241,19 +361,6 @@
     <p>Ми хочемо, щоб ваша витяжка щодня забезпечувала комфортну роботу, допомагала підтримувати чистоту робочого простору та служила вам якомога довше.</p>
     <p>Саме тому ми підготували прості рекомендації щодо правильної експлуатації та догляду за обладнанням.</p>
   </header>
-
-  <nav aria-label="Зміст">
-    <ul class="toc">
-      <li><a href="#hofra"><span>01</span>Положення гофри</a></li>
-      <li><a href="#plafon"><span>02</span>Плафон</a></li>
-      <li><a href="#kriplennia"><span>03</span>Кріплення гофри</a></li>
-      <li><a href="#ochyshchennia"><span>04</span>Очищення гофри</a></li>
-      <li><a href="#filtry"><span>05</span>Фільтри</a></li>
-      <li><a href="#zamina"><span>06</span>Заміна фільтра</a></li>
-      <li><a href="#vseredyni"><span>07</span>Внутрішні поверхні</a></li>
-      <li><a href="#pamiatka"><span aria-hidden="true">📅</span>Пам’ятка</a></li>
-    </ul>
-  </nav>
 
   <section class="card" id="hofra">
     <div class="head"><div class="num">01</div><h2>Правильне положення гофри</h2></div>
@@ -376,7 +483,7 @@
     <p>Регулярний догляд не забирає багато часу, але допомагає зберегти ефективність роботи обладнання та продовжити термін його служби.</p>
   </section>
 
-  <section class="card closing">
+  <section class="card closing" id="poruch">
     <div class="big-heart" aria-hidden="true">🤍</div>
     <h2>Ми поруч навіть після покупки</h2>
     <p>Для нас важливо, щоб ви не лише залишилися задоволені своїм вибором, а й отримували задоволення від роботи з обладнанням щодня.</p>
@@ -387,5 +494,77 @@
   </section>
 
 </div>
+</div>
+
+<div class="toc-backdrop" aria-hidden="true"></div>
+<button class="toc-fab" type="button" aria-controls="toc" aria-expanded="false" hidden>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+  <span class="fab-title">Зміст</span>
+  <span class="fab-num"></span>
+</button>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var toc = document.getElementById('toc');
+  var fab = document.querySelector('.toc-fab');
+  var backdrop = document.querySelector('.toc-backdrop');
+  var fabTitle = fab.querySelector('.fab-title');
+  var fabNum = fab.querySelector('.fab-num');
+  var items = Array.prototype.map.call(toc.querySelectorAll('a'), function (link) {
+    return {
+      link: link,
+      section: document.getElementById(link.getAttribute('href').slice(1)),
+      num: link.querySelector('.toc-num').textContent,
+      text: link.querySelector('.toc-text').textContent
+    };
+  });
+  var current = null;
+  var ticking = false;
+
+  function isOpen() { return root.classList.contains('toc-open'); }
+
+  function render() {
+    fabTitle.textContent = isOpen() ? 'Закрити' : (current ? current.text : 'Зміст');
+    fabNum.textContent = current ? current.num : '';
+  }
+
+  function setOpen(open) {
+    root.classList.toggle('toc-open', open);
+    fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && current) {  // keep the current section in the middle of the sheet, not under the button
+      toc.scrollTop = current.link.offsetTop - (toc.clientHeight - current.link.offsetHeight) / 2;
+    }
+    render();
+  }
+
+  function update() {
+    var line = window.innerHeight * 0.35;
+    var found = null;
+    items.forEach(function (item) {
+      if (item.section && item.section.getBoundingClientRect().top <= line) found = item;
+    });
+    if (window.innerHeight + window.scrollY >= root.scrollHeight - 2) found = items[items.length - 1];
+    if (found === current) return;
+    if (current) { current.link.classList.remove('active'); current.link.removeAttribute('aria-current'); }
+    current = found;
+    if (current) { current.link.classList.add('active'); current.link.setAttribute('aria-current', 'true'); }
+    render();
+  }
+
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(function () { ticking = false; update(); });
+  }, { passive: true });
+  window.addEventListener('resize', update);
+  fab.addEventListener('click', function () { setOpen(!isOpen()); });
+  backdrop.addEventListener('click', function () { setOpen(false); });
+  items.forEach(function (item) { item.link.addEventListener('click', function () { setOpen(false); }); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+  fab.hidden = false;
+  update();
+})();
+</script>
 </body>
 </html>
