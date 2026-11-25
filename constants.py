@@ -67,7 +67,8 @@ JSONS_ARCHIVE_PATH = Path(get_env('backup_root_path')) / 'Backup_Json'
 class ProductSmsRule:
     """SMS to the buyer when a CRM order has a product that meets all the conditions set in the rule:
     - SKU starts with sku_prefix and/or has sku_part anywhere;
-    - name has all `words` (whole words) and all `name_parts` (anywhere, also inside a word), and no `exclude_words`.
+    - name has all `words` (whole words) and all `name_parts` (anywhere, also inside a word);
+    - name has no `exclude_words` (whole words) and no `exclude_name_parts` (anywhere: 'гофр' stops гофра, гофри).
     All are compared in any case. A rule needs at least one SKU and one name condition, else it never matches.
     The name is the one the 1C sync uses: from the product feed by SKU (Ukrainian), else as in CRM."""
     key: str  # kept in table sent_sms as the rule name: don't change it after the rule was used
@@ -78,6 +79,7 @@ class ProductSmsRule:
     words: tuple[str, ...] = ()
     name_parts: tuple[str, ...] = ()
     exclude_words: tuple[str, ...] = ()
+    exclude_name_parts: tuple[str, ...] = ()
     link_without_https: bool = False  # 'tinyurl.com/…' instead of 'https://tinyurl.com/…', 8 characters shorter
 
 
@@ -101,6 +103,7 @@ PRODUCT_SMS_RULES: tuple[ProductSmsRule, ...] = (
         key='fusion_care',
         sku_part='fusion',
         name_parts=('fusion',),
+        exclude_name_parts=('фільтр', 'гофр', 'насадк'),  # filters, hose, nozzle: accessories, not the hood
         text='Дякуємо, що обрали {shop_name}! Гід з експлуатації та догляду за витяжкою Fusion {link}',  # 2 SMS
         link='https://share.ukrsalon.com.ua/fusion_{shop}.html',  # pages: share_pages/make_share_pages.py
     ),

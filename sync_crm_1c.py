@@ -963,6 +963,7 @@ def is_product_of_sms_rule(product: ProductBuyer, rule: constants.ProductSmsRule
         all(part.casefold() in name for part in rule.name_parts)
         and all(word.casefold() in name_words for word in rule.words)
         and not any(word.casefold() in name_words for word in rule.exclude_words)
+        and not any(part.casefold() in name for part in rule.exclude_name_parts)
     )
 
 
