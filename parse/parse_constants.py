@@ -152,8 +152,8 @@ shop_key_to_1c = {
     11: Shops.KLIMAZON.value,
 }
 
-shop_crm_id_to_sql_shop_id = {
-    1: 4,
+shop_crm_id_to_sql_shop_id = {  # CRM order source -> shop in the TTN DB; also picks the SMS sender name
+    1: 4,  # Климазон (old Prom shop, not used)
     2: 2,
     3: 3,
     4: 5,
@@ -163,6 +163,7 @@ shop_crm_id_to_sql_shop_id = {
     8: 4,
     9: 5,
     10: 1,
+    11: 4,  # Климазон Хорошоп
 }
 
 
