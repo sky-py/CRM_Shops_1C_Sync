@@ -65,15 +65,20 @@ JSONS_ARCHIVE_PATH = Path(get_env('backup_root_path')) / 'Backup_Json'
 
 @dataclass(frozen=True)
 class ProductSmsRule:
-    """SMS to the buyer when a CRM order has a product whose SKU starts with sku_prefix and whose name has all `words`
-    and none of `exclude_words`. Both are compared in any case, words as whole words. The name is the one the 1C sync
-    uses: from the product feed by SKU (Ukrainian), else as in CRM."""
+    """SMS to the buyer when a CRM order has a product that meets all the conditions set in the rule:
+    - SKU starts with sku_prefix and/or has sku_part anywhere;
+    - name has all `words` (whole words) and all `name_parts` (anywhere, also inside a word), and no `exclude_words`.
+    All are compared in any case. A rule needs at least one SKU and one name condition, else it never matches.
+    The name is the one the 1C sync uses: from the product feed by SKU (Ukrainian), else as in CRM."""
     key: str  # kept in table sent_sms as the rule name: don't change it after the rule was used
-    sku_prefix: str
-    words: tuple[str, ...]
     text: str  # '{link}' is replaced with the TinyURL short link of `link`
-    link: str
+    link: str  # '{shop}' is replaced with the shop slug of PRODUCT_SMS_SHOP_SLUGS
+    sku_prefix: str = ''
+    sku_part: str = ''
+    words: tuple[str, ...] = ()
+    name_parts: tuple[str, ...] = ()
     exclude_words: tuple[str, ...] = ()
+    link_without_https: bool = False  # 'tinyurl.com/…' instead of 'https://tinyurl.com/…', 8 characters shorter
 
 
 PRODUCT_SMS_RULES: tuple[ProductSmsRule, ...] = (
@@ -92,7 +97,25 @@ PRODUCT_SMS_RULES: tuple[ProductSmsRule, ...] = (
         text='Відеоінструкція перед монтажем мийки: {link}',
         link='https://www.youtube.com/watch?v=ZVKpyBOM2WI',
     ),
+    ProductSmsRule(
+        key='fusion_care',
+        sku_part='fusion',
+        name_parts=('fusion',),
+        text='Гід з експлуатації та догляду за витяжкою Fusion {link}',
+        link='https://share.ukrsalon.com.ua/fusion_{shop}.html',  # pages: share_pages/make_share_pages.py
+        link_without_https=True,  # with https:// the SMS is 77 characters, two SMS
+    ),
 )
+# shop_sql_id (as for TTN SMS, it also picks the SMS sender name) -> shop slug in the links of the shop's own pages
+PRODUCT_SMS_SHOP_SLUGS = {1: 'ukrsalon', 2: 'ukrstil', 3: 'beauty', 4: 'klimazon', 5: 'krasunia'}
+# Short links made by hand: used as they are, TinyURL isn't asked for them
+SHORT_LINKS = {
+    'https://share.ukrsalon.com.ua/fusion_ukrsalon.html': 'https://tinyurl.com/4mrpfz24',
+    'https://share.ukrsalon.com.ua/fusion_ukrstil.html': 'https://tinyurl.com/35ru6xjd',
+    'https://share.ukrsalon.com.ua/fusion_klimazon.html': 'https://tinyurl.com/yck3m7fr',
+    'https://share.ukrsalon.com.ua/fusion_beauty.html': 'https://tinyurl.com/nhx6x333',
+    'https://share.ukrsalon.com.ua/fusion_krasunia.html': 'https://tinyurl.com/ys4nym3s',
+}
 # SMS is not sent while the order (the CRM order or sub-order that has the product) is in these stage groups
 PRODUCT_SMS_EXCLUDED_STAGE_GROUP_IDS = (
     CRM_ORDER_NEW_STAGE_GROUP_ID,

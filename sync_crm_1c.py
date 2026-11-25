@@ -952,11 +952,17 @@ def run_prom_cpa_notices(session: Session) -> None:
 
 def is_product_of_sms_rule(product: ProductBuyer, rule: constants.ProductSmsRule) -> bool:
     """The product name is the parsed one: from the product feed by SKU (Ukrainian), else as in CRM."""
-    if not (product.sku or '').casefold().startswith(rule.sku_prefix.casefold()):
+    if not (rule.sku_prefix or rule.sku_part) or not (rule.words or rule.name_parts):
+        return False  # an incomplete rule would match far too many products
+    sku = (product.sku or '').casefold()
+    if not sku.startswith(rule.sku_prefix.casefold()) or rule.sku_part.casefold() not in sku:
         return False
+    name = product.name.casefold()
     name_words = get_name_words(product.name)
-    return all(word.casefold() in name_words for word in rule.words) and not any(
-        word.casefold() in name_words for word in rule.exclude_words
+    return (
+        all(part.casefold() in name for part in rule.name_parts)
+        and all(word.casefold() in name_words for word in rule.words)
+        and not any(word.casefold() in name_words for word in rule.exclude_words)
     )
 
 
@@ -1033,6 +1039,8 @@ class ProductSmsNotSendable(Exception):
 
 
 def get_short_link(long_url: str, session: Session) -> str:
+    if short_url := constants.SHORT_LINKS.get(long_url):
+        return short_url
     if link := session.get(ShortLinkDB, long_url):
         return link.short_url
     short_url = shorten(long_url)
@@ -1042,8 +1050,16 @@ def get_short_link(long_url: str, session: Session) -> str:
     return short_url
 
 
-def make_product_sms_text(rule: constants.ProductSmsRule, session: Session) -> str:
-    text = rule.text.format(link=get_short_link(rule.link, session))
+def make_product_sms_text(rule: constants.ProductSmsRule, shop_sql_id: int, session: Session) -> str:
+    long_url = rule.link
+    if '{shop}' in long_url:
+        if shop_sql_id not in constants.PRODUCT_SMS_SHOP_SLUGS:
+            raise ProductSmsNotSendable(f'no page of shop {shop_sql_id} in constants.PRODUCT_SMS_SHOP_SLUGS')
+        long_url = long_url.format(shop=constants.PRODUCT_SMS_SHOP_SLUGS[shop_sql_id])
+    link = get_short_link(long_url, session)
+    if rule.link_without_https:
+        link = link.removeprefix('https://').removeprefix('http://')
+    text = rule.text.format(link=link)
     if len(text) > constants.PRODUCT_SMS_MAX_LENGTH:
         raise ProductSmsNotSendable(
             f'text is {len(text)} characters, more than {constants.PRODUCT_SMS_MAX_LENGTH} (one SMS), '
@@ -1060,7 +1076,7 @@ def send_one_product_sms(sms: SentSmsDB, session: Session, now: datetime) -> Non
         rule = product_sms_rules.get(sms.rule)
         if rule is None:
             raise ProductSmsNotSendable('the rule is no longer in constants.PRODUCT_SMS_RULES')
-        text = make_product_sms_text(rule, session)
+        text = make_product_sms_text(rule, sms.shop_sql_id, session)
         r = send_sms(
             phone=sms.phone, alpha_name=alpha_names[sms.shop_sql_id], text=text, timeout=constants.PRODUCT_SMS_TIMEOUT
         )
