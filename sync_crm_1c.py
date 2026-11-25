@@ -1050,19 +1050,31 @@ def get_short_link(long_url: str, session: Session) -> str:
     return short_url
 
 
+def count_sms_parts(text: str) -> int:
+    """Cyrillic (UCS-2) SMS: 70 characters in one SMS, 67 in each part of a longer one."""
+    return 1 if len(text) <= 70 else -(-len(text) // 67)
+
+
+def get_product_sms_shop_value(values: dict[int, str], shop_sql_id: int, what: str) -> str:
+    if shop_sql_id not in values:
+        raise ProductSmsNotSendable(f'no {what} of shop {shop_sql_id} in constants')
+    return values[shop_sql_id]
+
+
 def make_product_sms_text(rule: constants.ProductSmsRule, shop_sql_id: int, session: Session) -> str:
     long_url = rule.link
     if '{shop}' in long_url:
-        if shop_sql_id not in constants.PRODUCT_SMS_SHOP_SLUGS:
-            raise ProductSmsNotSendable(f'no page of shop {shop_sql_id} in constants.PRODUCT_SMS_SHOP_SLUGS')
-        long_url = long_url.format(shop=constants.PRODUCT_SMS_SHOP_SLUGS[shop_sql_id])
+        long_url = long_url.format(shop=get_product_sms_shop_value(constants.PRODUCT_SMS_SHOP_SLUGS, shop_sql_id, 'page'))
     link = get_short_link(long_url, session)
     if rule.link_without_https:
         link = link.removeprefix('https://').removeprefix('http://')
-    text = rule.text.format(link=link)
-    if len(text) > constants.PRODUCT_SMS_MAX_LENGTH:
+    shop_name = ''
+    if '{shop_name}' in rule.text:
+        shop_name = get_product_sms_shop_value(constants.PRODUCT_SMS_SHOP_NAMES, shop_sql_id, 'name')
+    text = rule.text.format(link=link, shop_name=shop_name)
+    if count_sms_parts(text) > constants.PRODUCT_SMS_MAX_PARTS:
         raise ProductSmsNotSendable(
-            f'text is {len(text)} characters, more than {constants.PRODUCT_SMS_MAX_LENGTH} (one SMS), '
+            f'text is {len(text)} characters, {count_sms_parts(text)} SMS, more than {constants.PRODUCT_SMS_MAX_PARTS}; '
             f'fix it in constants.PRODUCT_SMS_RULES: {text}'
         )
     return text
@@ -1095,7 +1107,7 @@ def send_one_product_sms(sms: SentSmsDB, session: Session, now: datetime) -> Non
     sms.text = text
     sms.sent_at = now
     sms.last_error = None
-    logger.info(f'{title} sent to {sms.phone} => {text}')
+    logger.info(f'{title} sent to {sms.phone} ({count_sms_parts(text)} SMS) => {text}')
 
 
 def send_product_sms(session: Session) -> None:

@@ -5,7 +5,8 @@ not in git).
 
     python share_pages/make_share_pages.py [out_dir]
 
-Shop slugs must match constants.PRODUCT_SMS_SHOP_SLUGS, which builds the SMS links.
+Shop slugs must match constants.PRODUCT_SMS_SHOP_SLUGS, which builds the SMS links; shop names in SMS texts are in
+constants.PRODUCT_SMS_SHOP_NAMES.
 """
 import html
 import struct

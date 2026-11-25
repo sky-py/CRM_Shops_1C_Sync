@@ -71,7 +71,7 @@ class ProductSmsRule:
     All are compared in any case. A rule needs at least one SKU and one name condition, else it never matches.
     The name is the one the 1C sync uses: from the product feed by SKU (Ukrainian), else as in CRM."""
     key: str  # kept in table sent_sms as the rule name: don't change it after the rule was used
-    text: str  # '{link}' is replaced with the TinyURL short link of `link`
+    text: str  # '{link}' -> TinyURL short link of `link`, '{shop_name}' -> shop name of PRODUCT_SMS_SHOP_NAMES
     link: str  # '{shop}' is replaced with the shop slug of PRODUCT_SMS_SHOP_SLUGS
     sku_prefix: str = ''
     sku_part: str = ''
@@ -101,13 +101,14 @@ PRODUCT_SMS_RULES: tuple[ProductSmsRule, ...] = (
         key='fusion_care',
         sku_part='fusion',
         name_parts=('fusion',),
-        text='Гід з експлуатації та догляду за витяжкою Fusion {link}',
+        text='Дякуємо, що обрали {shop_name}! Гід з експлуатації та догляду за витяжкою Fusion {link}',  # 2 SMS
         link='https://share.ukrsalon.com.ua/fusion_{shop}.html',  # pages: share_pages/make_share_pages.py
-        link_without_https=True,  # with https:// the SMS is 77 characters, two SMS
     ),
 )
 # shop_sql_id (as for TTN SMS, it also picks the SMS sender name) -> shop slug in the links of the shop's own pages
 PRODUCT_SMS_SHOP_SLUGS = {1: 'ukrsalon', 2: 'ukrstil', 3: 'beauty', 4: 'klimazon', 5: 'krasunia'}
+# shop_sql_id -> shop name in SMS texts
+PRODUCT_SMS_SHOP_NAMES = {1: 'Укрсалон', 2: 'УкрСтиль', 3: "Б'юті-Маркет", 4: 'Клімазон', 5: 'Красуня'}
 # Short links made by hand: used as they are, TinyURL isn't asked for them
 SHORT_LINKS = {
     'https://share.ukrsalon.com.ua/fusion_ukrsalon.html': 'https://tinyurl.com/4mrpfz24',
@@ -123,7 +124,8 @@ PRODUCT_SMS_EXCLUDED_STAGE_GROUP_IDS = (
     CRM_ORDER_CANCELLED_STAGE_GROUP_ID,
 )
 PRODUCT_SMS_ORDERS_CREATED_FROM = date(2026, 11, 25)  # launch day: older orders get no product SMS
-PRODUCT_SMS_MAX_LENGTH = 70  # one Cyrillic SMS; a longer text is not sent, admin is told
+# A Cyrillic SMS holds 70 characters, a longer text goes as parts of 67; a text of more parts is not sent, admin is told
+PRODUCT_SMS_MAX_PARTS = 3
 PRODUCT_SMS_HOURS = (9, 20)  # SMS are sent only from 9:00 till 20:00 local time, others wait in sent_sms
 PRODUCT_SMS_MAX_TRIES = 5  # failed tries of one SMS, then admin is told
 PRODUCT_SMS_RETRY_MINUTES = 10
