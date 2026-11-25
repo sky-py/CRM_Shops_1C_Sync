@@ -68,16 +68,21 @@
   }
   /* Logos have dark lettering on a transparent background, so they always sit on a white plate */
   .logo {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
+    width: fit-content;
     max-width: 100%;
+    margin: 0 auto;
     padding: 12px 18px;
     border-radius: 16px;
     background: #ffffff;
     border: 1px solid var(--line);
     box-shadow: 0 1px 2px rgba(43, 37, 34, .05);
+    transition: box-shadow .2s ease, transform .2s ease;
   }
+  .logo:hover, .logo:focus-visible { box-shadow: 0 6px 20px rgba(43, 37, 34, .14); transform: translateY(-1px); }
+  .logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
   .logo img { display: block; width: auto; height: auto; max-width: min(250px, 100%); max-height: 96px; }
   .logo-small { margin-top: 18px; padding: 10px 14px; }
   .logo-small img { max-width: min(190px, 100%); max-height: 72px; }
@@ -357,7 +362,7 @@
 <div class="wrap">
 
   <header class="hero">
-    <div class="logo"><img src="img/{{LOGO}}" width="{{LOGO_W}}" height="{{LOGO_H}}" alt="{{BRAND}}"></div>
+    <a class="logo" href="{{SITE}}" target="_blank" rel="noopener" title="Сайт {{BRAND}}"><img src="img/{{LOGO}}" width="{{LOGO_W}}" height="{{LOGO_H}}" alt="{{BRAND}} — перейти на сайт"></a>
     <h1>Fusion — ваш надійний помічник щодня <span aria-hidden="true">🤍</span></h1>
     <p class="subtitle">Гід з експлуатації та догляду за витяжкою</p>
     <p>Дякуємо, що обрали Fusion!</p>
@@ -494,7 +499,7 @@
     <p>Із задоволенням підкажемо, допоможемо та проконсультуємо.</p>
     <p>Бажаємо вам комфортної роботи, вдячних клієнтів та професійного натхнення!</p>
     <p class="signature">З турботою про Вас та Вашу роботу,<br>команда <span>{{BRAND}}</span> <span aria-hidden="true">🤍</span></p>
-    <div class="logo logo-small"><img src="img/{{LOGO}}" width="{{LOGO_W}}" height="{{LOGO_H}}" alt="{{BRAND}}" loading="lazy"></div>
+    <a class="logo logo-small" href="{{SITE}}" target="_blank" rel="noopener" title="Сайт {{BRAND}}"><img src="img/{{LOGO}}" width="{{LOGO_W}}" height="{{LOGO_H}}" alt="{{BRAND}} — перейти на сайт" loading="lazy"></a>
   </section>
 
 </div>
