@@ -28,7 +28,7 @@ ttn_text_template = ('Ми відправили Ваше замовлення{by
                  )
 
 by_car_text_template = ' машиною.'
-by_post_text_template = ', ТТН {tracking_code} Відстежити: https://t.me/SalonSenderbot?start={tracking_code}s={shop_number}'
+by_post_text_template = ', ТТН {tracking_code}.'
 
 def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
     """Sends SMS.
@@ -41,7 +41,7 @@ def send_ttn_sms(phone: str, tracking_code: str, shop_sql_id: int):
 
     alpha = alpha_names[shop_sql_id]
     service_text = (by_car_text_template if tracking_code == TTN_SENT_BY_CAR else
-                    by_post_text_template.format(tracking_code=tracking_code, shop_number=shop_sql_id))
+                    by_post_text_template.format(tracking_code=tracking_code))
     text = ttn_text_template.format(by_service=service_text)
     return send_sms(phone=phone, alpha_name=alpha, text=text)
 
