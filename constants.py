@@ -89,14 +89,20 @@ PRODUCT_SMS_RULES: tuple[ProductSmsRule, ...] = (
         sku_prefix='VM_',
         words=('крісло',),
         exclude_words=('мийка', 'очікування', 'педикюрне'),  # крісло-мийка gets the sink SMS
-        text='Відеоінструкція з монтажу гідравліки: {link}',
+        text=(  # 3 SMS
+            'До Вашого замовлення: подбали про легке збирання крісла на гідравліці. '
+            'Перегляньте відеоінструкцію перед монтажем: {link}'
+        ),
         link='https://www.youtube.com/watch?v=Ccy4UY7W_fw',
     ),
     ProductSmsRule(
         key='sink_mounting',
         sku_prefix='VM_',
         words=('мийка',),
-        text='Відеоінструкція перед монтажем мийки: {link}',
+        text=(  # 3 SMS
+            'До Вашого замовлення: подбали про легке збирання перукарської мийки. '
+            'Перегляньте відеоінструкцію перед монтажем: {link}'
+        ),
         link='https://www.youtube.com/watch?v=ZVKpyBOM2WI',
     ),
     ProductSmsRule(
